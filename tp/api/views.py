@@ -27,3 +27,112 @@ class getNodeDetail(APIView):
         print("nodes: ", nodes)
         serializer = NodeSerializer(nodes, many = True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class componentNoid(APIView):
+    def get(self, request, format=None):
+        return Response("get all components", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("component NOT created", status=status.HTTP_200_OK)
+    
+class componentId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get component with id {pk}", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("component NOT updated", status=status.HTTP_200_OK)
+    
+class damageScenarioNoid(APIView):
+    def get(self, request, format=None):
+
+        return Response(f"get all damage scenarios", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("damage scenario NOT created", status=status.HTTP_200_OK)
+    
+class damageScenarioComponentId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get damage scenarios with component id {pk}", status=status.HTTP_200_OK)
+    
+class damageScenarioId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get damage scenario with id {pk}", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("ds NOT updated", status=status.HTTP_200_OK)
+    
+class controlNoid(APIView):
+    def get(self, request, format=None):
+
+        return Response(f"get all controls", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("control NOT created", status=status.HTTP_200_OK)
+
+class controlComponentId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get controls with component id {pk}", status=status.HTTP_200_OK)
+    
+class controlId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get control with id {pk}", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("control NOT updated", status=status.HTTP_200_OK)
+    
+class attackStepNoid(APIView):
+    def get(self, request, format=None):
+
+        return Response(f"get all attack steps", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("attack step not created", status=status.HTTP_200_OK)
+    
+class attackStepComponentId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get attack steps with component id {pk}", status=status.HTTP_200_OK)
+    
+class attackStepId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get attack step with id {pk}", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("attack steps NOT updated", status=status.HTTP_200_OK)
+    
+class threatScenarioNoid(APIView):
+    def get(self, request, format=None):
+
+        return Response(f"get all threatScenarios", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("threat scenario not created", status=status.HTTP_200_OK)
+    
+class threatScenarioComponentId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get threat scenarios with component id {pk}", status=status.HTTP_200_OK)
+    
+class threatScenarioId(APIView):
+    def get(self, request, pk, format=None):
+
+        return Response(f"get threat scenario with id {pk}", status=status.HTTP_200_OK)
+
+    def post(self, request):
+        json_body = request.data
+        return Response("threat scenario NOT updated", status=status.HTTP_200_OK)
