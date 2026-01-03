@@ -1,10 +1,10 @@
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .models import Node
-from .serializers import NodeSerializer
+from .models import *
+from .serializers import *
 from rest_framework.views import APIView
-import json
+from django.shortcuts import get_object_or_404
 
 # GET/POST /nodes/
 class getAllNodes(APIView):
@@ -30,29 +30,47 @@ class getNodeDetail(APIView):
     
 class componentNoid(APIView):
     def get(self, request, format=None):
-        return Response("get all components", status=status.HTTP_200_OK)
+        components = Component.objects.all()
+        serializer = ComponentSerializer(components, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         json_body = request.data
-        return Response("component NOT created", status=status.HTTP_200_OK)
+        n = Component(name=json_body["name"], description=json_body["description"])
+        n.save()
+        return Response("you just posted", status=status.HTTP_200_OK)
     
 class componentId(APIView):
     def get(self, request, pk, format=None):
+        components = Component.objects.filter(id=pk)
+        serializer = ComponentSerializer(components, many = True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-        return Response(f"get component with id {pk}", status=status.HTTP_200_OK)
-
-    def post(self, request):
-        json_body = request.data
+    def post(self, request, pk, format=None):
+        component = get_object_or_404(Component, id=pk)
+        serializer = ComponentSerializer(component, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
         return Response("component NOT updated", status=status.HTTP_200_OK)
     
 class damageScenarioNoid(APIView):
     def get(self, request, format=None):
-
-        return Response(f"get all damage scenarios", status=status.HTTP_200_OK)
+        damageScenarios = DamageScenario.objects.all()
+        serializer = DamageScenarioSerializer(damageScenarios, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         json_body = request.data
-        return Response("damage scenario NOT created", status=status.HTTP_200_OK)
+        n = DamageScenario(name=json_body["name"], affected_CIA_parts=json_body["affected_CIA_parts"],               
+                      impact_scale=json_body["impact_scale"],
+                      safety_impact=json_body["safety_impact"],
+                      finantial_impact=json_body["finantial_impact"],
+                      operational_impact=json_body["operational_impact"],
+                      privacy_impact=json_body["privacy_impact"],
+                      )
+        n.save()
+        return Response("you just posted", status=status.HTTP_200_OK)
     
 class damageScenarioComponentId(APIView):
     def get(self, request, pk, format=None):

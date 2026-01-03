@@ -15,7 +15,7 @@ class Component(models.Model):
     name = models.CharField()
     description = models.CharField()
     communicates_with = models.ManyToManyField('self', symmetrical=True, blank=True)
-    technology = models.ManyToManyField(Technology)
+    technology = models.ManyToManyField(Technology, blank=True)
     
 class DataEntity(models.Model):
     name = models.CharField()
@@ -54,14 +54,14 @@ class ThreatScenario(models.Model):
 
 class DamageScenario(models.Model):
     name = models.CharField()
-    affected_CIA_parts = models.JSONField()
+    affected_CIA_parts = models.CharField(blank=True)
     impact_scale = models.CharField()
     safety_impact = models.CharField()
     finantial_impact = models.CharField()
     operational_impact = models.CharField()
     privacy_impact = models.CharField()
     component = models.ForeignKey(Component, null=True, on_delete=models.SET_NULL)
-    threat_scenario = models.ForeignKey(ThreatScenario, null=True, on_delete=models.SET_NULL)
+    threat_scenario = models.ForeignKey(ThreatScenario, null=True, blank=True, on_delete=models.SET_NULL)
 
 class Comporomises(models.Model):
     compromised_CIA_part = models.CharField()
