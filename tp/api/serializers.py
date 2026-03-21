@@ -15,98 +15,44 @@ class TechnologySerializer(serializers.ModelSerializer):
             'description': {'max_length': 500}
         }
 
-class ComponentSerializer(serializers.ModelSerializer):
-    communicates_with = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Component.objects.all(), 
-        required=False
-    )
-    technology = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Technology.objects.all(), 
-        required=False
-    )
-    
-    class Meta:
-        model = Component
-        fields = ["id", "name", "description", "communicates_with", "technology"]
-        extra_kwargs = {
-            'name': {'max_length': 100},
-            'description': {'max_length': 500}
-        }
-
 class DataEntitySerializer(serializers.ModelSerializer):
-    technology = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Technology.objects.all()
-    )
-    
     class Meta:
         model = DataEntity
-        fields = ["id", "name", "description", "component", "technology"]
-        extra_kwargs = {
-            'name': {'max_length': 100},
-            'description': {'max_length': 500}
-        }
-
-class ControlSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Control
-        fields = ["id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", "component"]
-        extra_kwargs = {
-            'name': {'max_length': 100},
-            'fr_et': {'max_length': 100},
-            'fr_se': {'max_length': 100},
-            'fr_koC': {'max_length': 100},
-            'fr_WoO': {'max_length': 100},
-            'fr_eq': {'max_length': 100}
-        }
-
-class ThreatClassSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ThreatClass
         fields = ["id", "name", "description"]
         extra_kwargs = {
             'name': {'max_length': 100},
             'description': {'max_length': 500}
         }
 
-class AttackStepSerializer(serializers.ModelSerializer):
-    control = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=Control.objects.all(),
-        required=False
-    )
-    prepared_by = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=AttackStep.objects.all(), 
-        required=False
-    )
-    
+class ControlSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Control
+        fields = ["id", "name"]
+
+class AttackStepSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttackStep
-        fields = [
-            "id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", 
-            "component", "control", "prepared_by", "threat_class"
-        ]
-        extra_kwargs = {
-            'name': {'max_length': 100},
-            'fr_et': {'max_length': 100},
-            'fr_se': {'max_length': 100},
-            'fr_koC': {'max_length': 100},
-            'fr_WoO': {'max_length': 100},
-            'fr_eq': {'max_length': 100}
-        }
+        fields = ["id", "name"]
 
-class ThreatScenarioSerializer(serializers.ModelSerializer):
+class DamageScenarioSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DamageScenario
+        fields = ["id", "name", "affected_CIA_parts", "impact_scale", "safety_impact", 
+                  "finantial_impact", "operational_impact", "privacy_impact"]
+
+class ThreatScenarioSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = ThreatScenario
-        fields = ["id", "name", "attackStep", "threat_class"]
-        extra_kwargs = {
-            'name': {'max_length': 100}
-        }
+        fields = ["id", "name"]
 
 class DamageScenarioSerializer(serializers.ModelSerializer):
+    threat_scenario = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=ThreatScenario.objects.all(),
+        required=False,
+        source='threat_scenarios'
+    )
+    
     class Meta:
         model = DamageScenario
         fields = [
@@ -122,6 +68,161 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
             'operational_impact': {'max_length': 100},
             'privacy_impact': {'max_length': 100}
         }
+
+class ControlSerializer(serializers.ModelSerializer):
+    attack_steps = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=AttackStep.objects.all(), 
+        required=False
+    )
+    
+    class Meta:
+        model = Control
+        fields = ["id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", "component", "attack_steps"]
+        extra_kwargs = {
+            'name': {'max_length': 100},
+            'fr_et': {'max_length': 100},
+            'fr_se': {'max_length': 100},
+            'fr_koC': {'max_length': 100},
+            'fr_WoO': {'max_length': 100},
+            'fr_eq': {'max_length': 100}
+        }
+
+class ControlDetailSerializer(serializers.ModelSerializer):
+    attack_steps = AttackStepSimpleSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Control
+        fields = ["id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", "component", "attack_steps"]
+
+class ThreatClassSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ThreatClass
+        fields = ["id", "name", "description"]
+        extra_kwargs = {
+            'name': {'max_length': 100},
+            'description': {'max_length': 500}
+        }
+
+class AttackStepSerializer(serializers.ModelSerializer):
+    prepared_by = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=AttackStep.objects.all(), 
+        required=False
+    )
+    threat_scenario = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=ThreatScenario.objects.all(),
+        required=False,
+        source='threat_scenarios'
+    )
+    controls = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Control.objects.all(),
+        required=False
+    )
+    
+    class Meta:
+        model = AttackStep
+        fields = [
+            "id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", 
+            "component", "prepared_by", "threat_class", "threat_scenario", "controls"
+        ]
+        extra_kwargs = {
+            'name': {'max_length': 100},
+            'fr_et': {'max_length': 100},
+            'fr_se': {'max_length': 100},
+            'fr_koC': {'max_length': 100},
+            'fr_WoO': {'max_length': 100},
+            'fr_eq': {'max_length': 100}
+        }
+
+class AttackStepDetailSerializer(serializers.ModelSerializer):
+    prepared_by = AttackStepSimpleSerializer(many=True, read_only=True)
+    threat_scenario = ThreatScenarioSimpleSerializer(many=True, read_only=True, source='threat_scenarios')
+    controls = ControlSimpleSerializer(many=True, read_only=True)
+    threat_class = ThreatClassSerializer(read_only=True)
+    
+    class Meta:
+        model = AttackStep
+        fields = [
+            "id", "name", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq", 
+            "component", "prepared_by", "threat_class", "threat_scenario", "controls"
+        ]
+
+class ThreatScenarioSerializer(serializers.ModelSerializer):
+    attack_step = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=AttackStep.objects.all(),
+        required=False,
+        source='attack_steps'
+    )
+    damage_scenario = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=DamageScenario.objects.all(),
+        required=False,
+        source='damage_scenarios'
+    )
+    compromises = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Comporomises.objects.all(),
+        required=False
+    )
+    
+    class Meta:
+        model = ThreatScenario
+        fields = ["id", "name", "attack_step", "damage_scenario", "threat_class", "compromises"]
+        extra_kwargs = {
+            'name': {'max_length': 100}
+        }
+
+class ThreatScenarioDetailSerializer(serializers.ModelSerializer):
+    attack_step = AttackStepSimpleSerializer(many=True, read_only=True, source='attack_steps')
+    damage_scenario = DamageScenarioSimpleSerializer(many=True, read_only=True, source='damage_scenarios')
+    threat_class = ThreatClassSerializer(read_only=True)
+    compromises = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ThreatScenario
+        fields = ["id", "name", "attack_step", "damage_scenario", "threat_class", "compromises"]
+    
+    def get_compromises(self, obj):
+        return [{"component_id": c.component_id, "compromised_part_cia": c.compromised_CIA_part} 
+                for c in obj.compromise_items.all()]
+
+class ComponentSerializer(serializers.ModelSerializer):
+    communicates_with = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=Component.objects.all(), 
+        required=False
+    )
+    technology = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=Technology.objects.all(), 
+        required=False
+    )
+    data_entity = DataEntitySerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Component
+        fields = ["id", "name", "description", "communicates_with", "technology", "data_entity"]
+        extra_kwargs = {
+            'name': {'max_length': 100},
+            'description': {'max_length': 500}
+        }
+
+class ComponentDetailSerializer(serializers.ModelSerializer):
+    data_entity = DataEntitySerializer(many=True, read_only=True)
+    technology = TechnologySerializer(many=True, read_only=True)
+    damage_scenario = DamageScenarioSerializer(many=True, read_only=True, source='damage_scenarios')
+    control = ControlDetailSerializer(many=True, read_only=True, source='controls')
+    threat_scenarios = ThreatScenarioSimpleSerializer(many=True, read_only=True)
+    attack_steps = AttackStepSimpleSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Component
+        fields = ["id", "name", "description", "data_entity", "technology", "damage_scenario", 
+                  "control", "threat_scenarios", "attack_steps"]
 
 class ComporomisesSerializer(serializers.ModelSerializer):
     class Meta:
