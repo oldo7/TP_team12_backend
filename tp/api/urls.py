@@ -11,6 +11,8 @@ urlpatterns = [
     # Project endpoints
     path("projects/", views.ProjectListCreateView.as_view(), name="projects"),
     path("projects/<int:pk>/", views.ProjectDetailView.as_view(), name="project_detail"),
+    path("technology/", views.technologyNoid.as_view(), name="Get all technologies"),
+    path("technology/<int:pk>/", views.technologyId.as_view(), name="Technology detail"),
     
     # Existing endpoints
     path("nodes/", views.getAllNodes.as_view(), name="Get all nodes"),
