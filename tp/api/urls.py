@@ -1,7 +1,18 @@
 from django.urls import path
 from . import views
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
+    # Auth endpoints
+    path("register/", views.RegisterView.as_view(), name="register"),
+    path("token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    
+    # Project endpoints
+    path("projects/", views.ProjectListCreateView.as_view(), name="projects"),
+    path("projects/<int:pk>/", views.ProjectDetailView.as_view(), name="project_detail"),
+    
+    # Existing endpoints
     path("nodes/", views.getAllNodes.as_view(), name="Get all nodes"),
     path("nodes/<int:pk>/", views.getNodeDetail.as_view(), name="Node detail"),
     path("component/", views.componentNoid.as_view(), name="Get all components"),
