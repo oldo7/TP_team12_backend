@@ -10,10 +10,31 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def load_env_file(path):
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+load_env_file(BASE_DIR.parent / '.env')
+load_env_file(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -21,6 +42,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-76n2zx_3)(^2tpla*g8w&krtcoq2r2xeuwvit+31fa9z-4(0mk'
+
+# Provider-neutral assistant secret for the future Langchains integration.
+# Set ASSISTANT_API in the backend environment.
+ASSISTANT_API = os.environ.get('ASSISTANT_API', '')
+ASSISTANT_API_URL = os.environ.get('ASSISTANT_API_URL', '')
+ASSISTANT_MODEL = os.environ.get('ASSISTANT_MODEL', 'deepseek-chat')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

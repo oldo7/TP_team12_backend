@@ -16,6 +16,11 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from .langchains import (
+    AssistantConfigurationError,
+    AssistantProviderError,
+    prepare_langchain_response,
+)
 
 # Helper function to check project access
 def check_project_access(user, project_id):
@@ -284,6 +289,36 @@ class RegisterView(APIView):
         
         user = User.objects.create_user(username=username, password=password, email=email)
         return Response({'message': 'User created successfully'}, status=status.HTTP_201_CREATED)
+
+
+class LangchainsPrepareView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        project_id = request.data.get('project_id')
+        prompt = str(request.data.get('prompt', '')).strip()
+        messages = request.data.get('messages', [])
+
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not prompt:
+            return Response({'error': 'prompt required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            return Response(
+                prepare_langchain_response(project, prompt, messages),
+                status=status.HTTP_200_OK,
+            )
+        except AssistantConfigurationError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except AssistantProviderError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
 class ProjectListCreateView(APIView):
     authentication_classes = [JWTAuthentication]

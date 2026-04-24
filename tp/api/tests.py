@@ -1,4 +1,7 @@
+from unittest.mock import patch
+
 from django.contrib.auth.models import User
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from .models import (
@@ -406,3 +409,287 @@ class TaraMappingTests(APITestCase):
             [step['id'] for step in detail_response.data['next_steps']],
             [chained_step.id],
         )
+
+
+class LangchainsPrepareTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='langchain-user', password='secret')
+        self.other_user = User.objects.create_user(username='other-user', password='secret')
+        self.client.force_authenticate(user=self.user)
+        self.project = Project.objects.create(
+            name='Langchains Project',
+            description='Endpoint test',
+            owner=self.user,
+        )
+        self.other_project = Project.objects.create(
+            name='Other Project',
+            description='Access check',
+            owner=self.other_user,
+        )
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_returns_assistant_tool_proposals(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            tool_calls=[
+                {
+                    'name': 'propose_component',
+                    'args': {
+                        'temp_id': 'component-gateway',
+                        'title': 'Gateway ECU',
+                        'description': 'Gateway component',
+                        'name': 'Gateway ECU',
+                        'communicates_with': [],
+                        'technology': [],
+                        'references': [
+                            {
+                                'field': 'technology',
+                                'tempId': 'technology-can',
+                                'mode': 'many',
+                                'label': 'CAN',
+                            }
+                        ],
+                    },
+                }
+            ]
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'I have a project using component gateway ECU, implemented using technologies CAN and TLS. Prepare scenarios.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['provider'], 'assistant')
+        self.assertEqual(response.data['mode'], 'conversation')
+        self.assertEqual(response.data['model'], 'assistant-test-model')
+        self.assertEqual(response.data['message'], 'I prepared 1 proposal for review.')
+        self.assertTrue(response.data['assistantApiConfigured'])
+        self.assertTrue(response.data['apiUrlConfigured'])
+        self.assertEqual(len(response.data['proposals']), 1)
+        self.assertEqual(response.data['proposals'][0]['status'], 'pending')
+        self.assertEqual(response.data['proposals'][0]['type'], 'component')
+        self.assertEqual(
+            response.data['proposals'][0]['references'],
+            [
+                {
+                    'field': 'technology',
+                    'tempId': 'technology-can',
+                    'mode': 'many',
+                    'label': 'CAN',
+                }
+            ],
+        )
+
+        chat_deepseek.assert_called_once_with(
+            model='assistant-test-model',
+            api_key='test-key',
+            base_url='https://assistant.example/api',
+            temperature=0.2,
+            timeout=60,
+        )
+        chat_deepseek.return_value.bind_tools.assert_called_once()
+        self.assertEqual(
+            chat_deepseek.return_value.bind_tools.call_args.kwargs,
+            {'tool_choice': 'auto'},
+        )
+        chat_deepseek.return_value.bind_tools.return_value.invoke.assert_called_once()
+        self.assertNotIn('test-key', str(response.data))
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://api.deepseek.com/chat/completions',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_accepts_full_chat_completions_url(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            tool_calls=[
+                {
+                    'name': 'propose_technology',
+                    'args': {
+                        'temp_id': 'technology-can',
+                        'title': 'CAN',
+                        'description': 'Controller Area Network',
+                        'name': 'CAN',
+                    },
+                }
+            ]
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'Prepare scenarios for component gateway.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            chat_deepseek.call_args.kwargs['base_url'],
+            'https://api.deepseek.com',
+        )
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_supports_conversation_without_tool_calls(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            'This project is still early; start with components and trust boundaries.'
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'What should I do next?',
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': 'Remember that this is a gateway project.',
+                    }
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data['message'],
+            'This project is still early; start with components and trust boundaries.',
+        )
+        self.assertEqual(response.data['proposals'], [])
+        self.assertIsNone(response.data['analysis'])
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_returns_analysis_tool_result(self, chat_deepseek):
+        Component.objects.create(
+            name='Gateway ECU',
+            description='Gateway component',
+            project=self.project,
+        )
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            tool_calls=[
+                {
+                    'name': 'analyze_current_state',
+                    'args': {'focus': 'coverage gaps'},
+                }
+            ]
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'Analyze the current state.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['message'], 'I analyzed the current model state.')
+        self.assertEqual(response.data['proposals'], [])
+        self.assertEqual(response.data['analysis']['counts']['components'], 1)
+        self.assertEqual(response.data['analysis']['recommendations'][0], 'Focus requested: coverage gaps')
+        self.assertTrue(response.data['analysis']['gaps'])
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_returns_502_when_assistant_returns_nothing(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage()
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'Prepare scenarios for component gateway.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.data['error'],
+            'Assistant response did not include text or tool calls.',
+        )
+
+    @override_settings(ASSISTANT_API='', ASSISTANT_API_URL='https://assistant.example/api')
+    def test_prepare_requires_assistant_api_key(self):
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'I have a project using component sensor gateway and technologies Ethernet.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data['error'], 'ASSISTANT_API is not configured.')
+
+    @override_settings(ASSISTANT_API='test-key', ASSISTANT_API_URL='')
+    def test_prepare_requires_assistant_api_url(self):
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'I have a project using component sensor gateway.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data['error'], 'ASSISTANT_API_URL is not configured.')
+
+    def test_prepare_requires_prompt(self):
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': '',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'prompt required')
+
+    def test_prepare_rejects_foreign_project(self):
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.other_project.id,
+                'prompt': 'Prepare scenarios for component gateway.',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
+class FakeLangchainMessage:
+    def __init__(self, content='', tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []

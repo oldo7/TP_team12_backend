@@ -8,6 +8,7 @@ urlpatterns = [
     path("register/", views.RegisterView.as_view(), name="register"),
     path("token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("langchains/prepare/", views.LangchainsPrepareView.as_view(), name="langchains_prepare"),
     
     # Project endpoints
     path("projects/", views.ProjectListCreateView.as_view(), name="projects"),
