@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -102,6 +103,50 @@ def sync_threat_scenarios(instance, project, payload):
             threat_scenarios.append(threat_scenario)
 
     instance.threat_scenarios.set(threat_scenarios)
+
+
+def truncate_model_name(model_class, value):
+    max_length = model_class._meta.get_field('name').max_length
+    return value[:max_length]
+
+
+def create_damage_scenario_for_attack_step(attack_step, project):
+    threat_scenarios = list(attack_step.threat_scenarios.filter(project=project))
+
+    if not threat_scenarios:
+        threat_scenario = ThreatScenario.objects.create(
+            name=truncate_model_name(
+                ThreatScenario,
+                f'Threat scenario for {attack_step.name}',
+            ),
+            description=attack_step.description,
+            threat_class=attack_step.threat_class,
+            project=project,
+        )
+        threat_scenario.attack_steps.add(attack_step)
+        threat_scenarios = [threat_scenario]
+
+    damage_scenario = DamageScenario.objects.create(
+        name=truncate_model_name(
+            DamageScenario,
+            f'Damage scenario for {attack_step.name}',
+        ),
+        description=attack_step.description,
+        affected_CIA_parts=CIABitmask.NONE,
+        impact_scale=ImpactRating.NEGLIGIBLE,
+        safety_impact=ImpactRating.NEGLIGIBLE,
+        finantial_impact=ImpactRating.NEGLIGIBLE,
+        operational_impact=ImpactRating.NEGLIGIBLE,
+        privacy_impact=ImpactRating.NEGLIGIBLE,
+        component=attack_step.component,
+        project=project,
+    )
+
+    for threat_scenario in threat_scenarios:
+        threat_scenario.attack_steps.add(attack_step)
+        threat_scenario.damage_scenarios.add(damage_scenario)
+
+    return damage_scenario
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -645,14 +690,16 @@ class attackStepNoid(APIView):
         
         serializer = AttackStepSerializer(data=build_serializer_payload(request))
         if serializer.is_valid():
-            attack_step = serializer.save(project=project)
-            if 'previous_steps' in request.data:
-                previous_steps = AttackStep.objects.filter(id__in=request.data['previous_steps'], project=project)
-                attack_step.previous_steps.set(previous_steps)
-            sync_threat_scenarios(attack_step, project, request.data)
-            if 'controls' in request.data:
-                controls = Control.objects.filter(id__in=request.data['controls'], project=project)
-                attack_step.controls.set(controls)
+            with transaction.atomic():
+                attack_step = serializer.save(project=project)
+                if 'previous_steps' in request.data:
+                    previous_steps = AttackStep.objects.filter(id__in=request.data['previous_steps'], project=project)
+                    attack_step.previous_steps.set(previous_steps)
+                sync_threat_scenarios(attack_step, project, request.data)
+                if 'controls' in request.data:
+                    controls = Control.objects.filter(id__in=request.data['controls'], project=project)
+                    attack_step.controls.set(controls)
+                create_damage_scenario_for_attack_step(attack_step, project)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     

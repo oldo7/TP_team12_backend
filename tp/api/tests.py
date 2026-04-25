@@ -114,9 +114,50 @@ class TaraMappingTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         attack_step = AttackStep.objects.get(id=response.data['id'])
+        damage_scenario = DamageScenario.objects.get(
+            name='Damage scenario for Replay authenticated message',
+        )
         self.assertEqual(
             list(attack_step.threat_scenarios.values_list('name', flat=True)),
             ['Spoof valid braking message'],
+        )
+        self.assertEqual(
+            list(damage_scenario.threat_scenarios.values_list('name', flat=True)),
+            ['Spoof valid braking message'],
+        )
+
+    def test_attack_step_create_creates_joined_damage_scenario(self):
+        response = self.client.post(
+            '/api/attack_step/',
+            {
+                'name': 'Exploit diagnostic session',
+                'description': 'Unlock restricted diagnostics',
+                'fr_et': ElapsedTimeScore.LEQ_1_WEEK,
+                'fr_se': SpecialistExpertiseScore.PROFICIENT,
+                'fr_koC': KnowledgeScore.RESTRICTED,
+                'fr_WoO': WindowOfOpportunityScore.EASY,
+                'fr_eq': EquipmentScore.SPECIALIZED,
+                'component': self.component.id,
+                'project_id': self.project.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        attack_step = AttackStep.objects.get(id=response.data['id'])
+        damage_scenario = DamageScenario.objects.get(
+            name='Damage scenario for Exploit diagnostic session',
+        )
+
+        self.assertEqual(damage_scenario.project, self.project)
+        self.assertEqual(damage_scenario.component, self.component)
+        self.assertEqual(damage_scenario.affected_CIA_parts, CIABitmask.NONE)
+        self.assertEqual(damage_scenario.impact_scale, ImpactRating.NEGLIGIBLE)
+        self.assertEqual(attack_step.mapped_damage_scenarios.get(), damage_scenario)
+        self.assertEqual(damage_scenario.mapped_attack_steps.get(), attack_step)
+        self.assertEqual(
+            list(attack_step.threat_scenarios.values_list('name', flat=True)),
+            ['Threat scenario for Exploit diagnostic session'],
         )
 
     def test_damage_scenario_create_can_reuse_existing_threat_scenario_by_name(self):
