@@ -8,8 +8,8 @@ class ComponentAdmin(admin.ModelAdmin):
 
 @admin.register(DamageScenario)
 class DamageScenarioAdmin(admin.ModelAdmin):
-    list_display = ['id', 'name', 'component', 'threat_scenario']
-    list_filter = ['component', 'threat_scenario']
+    list_display = ['id', 'name', 'component']
+    list_filter = ['component']
 
 @admin.register(Control)
 class ControlAdmin(admin.ModelAdmin):
@@ -19,15 +19,15 @@ class ControlAdmin(admin.ModelAdmin):
 
 @admin.register(AttackStep)
 class AttackStepAdmin(admin.ModelAdmin):
-    list_display = ['id', 'name', 'component', 'threat_class']
+    list_display = ['id', 'name', 'required_access', 'component', 'threat_class']
     list_filter = ['component', 'threat_class']
-    filter_horizontal = ['prepared_by', 'threat_scenario', 'controls']
+    filter_horizontal = ['previous_steps', 'controls']
 
 @admin.register(ThreatScenario)
 class ThreatScenarioAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'threat_class']
     list_filter = ['threat_class']
-    filter_horizontal = ['attack_step', 'damage_scenario']
+    filter_horizontal = ['attack_steps', 'damage_scenarios']
 
 @admin.register(Technology)
 class TechnologyAdmin(admin.ModelAdmin):
@@ -47,7 +47,3 @@ class ThreatClassAdmin(admin.ModelAdmin):
 class ComporomisesAdmin(admin.ModelAdmin):
     list_display = ['id', 'component', 'threat_scenario', 'compromised_CIA_part']
     list_filter = ['component', 'threat_scenario']
-
-@admin.register(Node)
-class NodeAdmin(admin.ModelAdmin):
-    list_display = ['id', 'title']

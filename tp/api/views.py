@@ -17,56 +17,92 @@ def check_project_access(user, project_id):
     except Project.DoesNotExist:
         return None
 
-# GET/POST /nodes/
-class getAllNodes(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request, format=None):
-        project_id = request.query_params.get('project_id')
-        if not project_id:
-            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        project = check_project_access(request.user, project_id)
-        if not project:
-            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
-        
-        nodes = Node.objects.all()
-        serializer = NodeSerializer(nodes, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    def post(self, request):
-        project_id = request.data.get('project_id')
-        if not project_id:
-            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        project = check_project_access(request.user, project_id)
-        if not project:
-            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
-        
-        json_body = request.data
-        n = Node(title=json_body["title"], content=json_body["content"])
-        n.save()
-        return Response("you just posted", status=status.HTTP_200_OK)
-    
-# GET /nodes/<id>/
-class getNodeDetail(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request, pk, format=None):
-        project_id = request.query_params.get('project_id')
-        if not project_id:
-            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        project = check_project_access(request.user, project_id)
-        if not project:
-            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
-        
-        nodes = Node.objects.filter(id=pk)
-        serializer = NodeSerializer(nodes, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
+def build_serializer_payload(request, remove_fields=None):
+    payload = request.data.copy()
+    fields_to_remove = {'threat_scenario_name'}
+    if remove_fields:
+        fields_to_remove.update(remove_fields)
+    for field_name in fields_to_remove:
+        payload.pop(field_name, None)
+    return payload
+
+
+def parse_cia_bitmask(value):
+    if value is None:
+        return CIABitmask.NONE
+
+    normalized = str(value).strip().lower().replace(',', '').replace(' ', '')
+    aliases = {
+        '': CIABitmask.NONE,
+        '0': CIABitmask.NONE,
+        '000': CIABitmask.NONE,
+        'none': CIABitmask.NONE,
+        'availability': CIABitmask.AVAILABILITY,
+        'a': CIABitmask.AVAILABILITY,
+        '1': CIABitmask.AVAILABILITY,
+        '001': CIABitmask.AVAILABILITY,
+        'integrity': CIABitmask.INTEGRITY,
+        'i': CIABitmask.INTEGRITY,
+        '2': CIABitmask.INTEGRITY,
+        '010': CIABitmask.INTEGRITY,
+        'confidentiality': CIABitmask.CONFIDENTIALITY,
+        'c': CIABitmask.CONFIDENTIALITY,
+        '4': CIABitmask.CONFIDENTIALITY,
+        '100': CIABitmask.CONFIDENTIALITY,
+        'ia': CIABitmask.INTEGRITY | CIABitmask.AVAILABILITY,
+        '011': CIABitmask.INTEGRITY | CIABitmask.AVAILABILITY,
+        'ca': CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+        '101': CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+        'ci': CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY,
+        '110': CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY,
+        'cia': CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY | CIABitmask.AVAILABILITY,
+        'all': CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY | CIABitmask.AVAILABILITY,
+        '111': CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY | CIABitmask.AVAILABILITY,
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    raise ValueError(f'Unsupported CIA bitmask value: {value!r}')
+
+
+def sync_threat_scenarios(instance, project, payload):
+    if 'threat_scenarios' not in payload and 'threat_scenario_name' not in payload:
+        return
+
+    if hasattr(payload, 'getlist'):
+        threat_scenario_ids = payload.getlist('threat_scenarios')
+    else:
+        threat_scenario_ids = payload.get('threat_scenarios', [])
+
+    if 'threat_scenarios' in payload:
+        if not isinstance(threat_scenario_ids, (list, tuple)):
+            threat_scenario_ids = [threat_scenario_ids]
+        threat_scenarios = list(
+            ThreatScenario.objects.filter(id__in=threat_scenario_ids, project=project)
+        )
+    else:
+        threat_scenarios = list(instance.threat_scenarios.all())
+
+    threat_scenario_name = payload.get('threat_scenario_name')
+    if isinstance(threat_scenario_name, list):
+        threat_scenario_name = threat_scenario_name[0] if threat_scenario_name else ''
+
+    if threat_scenario_name:
+        defaults = {}
+        threat_class = getattr(instance, 'threat_class', None)
+        if threat_class is not None:
+            defaults['threat_class'] = threat_class
+
+        threat_scenario, _ = ThreatScenario.objects.get_or_create(
+            name=threat_scenario_name,
+            project=project,
+            defaults=defaults,
+        )
+        if all(existing.id != threat_scenario.id for existing in threat_scenarios):
+            threat_scenarios.append(threat_scenario)
+
+    instance.threat_scenarios.set(threat_scenarios)
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     
@@ -303,9 +339,6 @@ class componentId(APIView):
             if 'controls' in request.data:
                 controls = Control.objects.filter(id__in=request.data['controls'], project=project)
                 component.controls.set(controls)
-            if 'threat_scenarios' in request.data:
-                threat_scenarios = ThreatScenario.objects.filter(id__in=request.data['threat_scenarios'], project=project)
-                component.threat_scenarios.set(threat_scenarios)
             if 'attack_steps' in request.data:
                 attack_steps = AttackStep.objects.filter(id__in=request.data['attack_steps'], project=project)
                 component.attack_steps.set(attack_steps)
@@ -374,9 +407,10 @@ class damageScenarioNoid(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = DamageScenarioSerializer(data=request.data)
+        serializer = DamageScenarioSerializer(data=build_serializer_payload(request))
         if serializer.is_valid():
-            serializer.save(project=project)
+            damage_scenario = serializer.save(project=project)
+            sync_threat_scenarios(damage_scenario, project, request.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -411,7 +445,7 @@ class damageScenarioId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         damage_scenario = get_object_or_404(DamageScenario, id=pk, project=project)
-        serializer = DamageScenarioSerializer(damage_scenario)
+        serializer = DamageScenarioDetailSerializer(damage_scenario)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request, pk, format=None):
@@ -424,9 +458,10 @@ class damageScenarioId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         damage_scenario = get_object_or_404(DamageScenario, id=pk, project=project)
-        serializer = DamageScenarioSerializer(damage_scenario, data=request.data)
+        serializer = DamageScenarioSerializer(damage_scenario, data=build_serializer_payload(request))
         if serializer.is_valid():
-            serializer.save()
+            damage_scenario = serializer.save()
+            sync_threat_scenarios(damage_scenario, project, request.data)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -440,9 +475,10 @@ class damageScenarioId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         damage_scenario = get_object_or_404(DamageScenario, id=pk, project=project)
-        serializer = DamageScenarioSerializer(damage_scenario, data=request.data, partial=True)
+        serializer = DamageScenarioSerializer(damage_scenario, data=build_serializer_payload(request), partial=True)
         if serializer.is_valid():
-            serializer.save()
+            damage_scenario = serializer.save()
+            sync_threat_scenarios(damage_scenario, project, request.data)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -607,15 +643,13 @@ class attackStepNoid(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = AttackStepSerializer(data=request.data)
+        serializer = AttackStepSerializer(data=build_serializer_payload(request))
         if serializer.is_valid():
             attack_step = serializer.save(project=project)
-            if 'prepared_by' in request.data:
-                prepared_by = AttackStep.objects.filter(id__in=request.data['prepared_by'], project=project)
-                attack_step.prepared_by.set(prepared_by)
-            if 'threat_scenarios' in request.data:
-                threat_scenarios = ThreatScenario.objects.filter(id__in=request.data['threat_scenarios'], project=project)
-                attack_step.threat_scenarios.set(threat_scenarios)
+            if 'previous_steps' in request.data:
+                previous_steps = AttackStep.objects.filter(id__in=request.data['previous_steps'], project=project)
+                attack_step.previous_steps.set(previous_steps)
+            sync_threat_scenarios(attack_step, project, request.data)
             if 'controls' in request.data:
                 controls = Control.objects.filter(id__in=request.data['controls'], project=project)
                 attack_step.controls.set(controls)
@@ -666,15 +700,13 @@ class attackStepId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         attack_step = get_object_or_404(AttackStep, id=pk, project=project)
-        serializer = AttackStepSerializer(attack_step, data=request.data)
+        serializer = AttackStepSerializer(attack_step, data=build_serializer_payload(request))
         if serializer.is_valid():
             attack_step = serializer.save()
-            if 'prepared_by' in request.data:
-                prepared_by = AttackStep.objects.filter(id__in=request.data['prepared_by'], project=project)
-                attack_step.prepared_by.set(prepared_by)
-            if 'threat_scenarios' in request.data:
-                threat_scenarios = ThreatScenario.objects.filter(id__in=request.data['threat_scenarios'], project=project)
-                attack_step.threat_scenarios.set(threat_scenarios)
+            if 'previous_steps' in request.data:
+                previous_steps = AttackStep.objects.filter(id__in=request.data['previous_steps'], project=project)
+                attack_step.previous_steps.set(previous_steps)
+            sync_threat_scenarios(attack_step, project, request.data)
             if 'controls' in request.data:
                 controls = Control.objects.filter(id__in=request.data['controls'], project=project)
                 attack_step.controls.set(controls)
@@ -691,15 +723,13 @@ class attackStepId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         attack_step = get_object_or_404(AttackStep, id=pk, project=project)
-        serializer = AttackStepSerializer(attack_step, data=request.data, partial=True)
+        serializer = AttackStepSerializer(attack_step, data=build_serializer_payload(request), partial=True)
         if serializer.is_valid():
             attack_step = serializer.save()
-            if 'prepared_by' in request.data:
-                prepared_by = AttackStep.objects.filter(id__in=request.data['prepared_by'], project=project)
-                attack_step.prepared_by.set(prepared_by)
-            if 'threat_scenarios' in request.data:
-                threat_scenarios = ThreatScenario.objects.filter(id__in=request.data['threat_scenarios'], project=project)
-                attack_step.threat_scenarios.set(threat_scenarios)
+            if 'previous_steps' in request.data:
+                previous_steps = AttackStep.objects.filter(id__in=request.data['previous_steps'], project=project)
+                attack_step.previous_steps.set(previous_steps)
+            sync_threat_scenarios(attack_step, project, request.data)
             if 'controls' in request.data:
                 controls = Control.objects.filter(id__in=request.data['controls'], project=project)
                 attack_step.controls.set(controls)
@@ -746,7 +776,9 @@ class threatScenarioNoid(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        serializer = ThreatScenarioSerializer(data=request.data)
+        serializer = ThreatScenarioSerializer(
+            data=build_serializer_payload(request, remove_fields={'compromises'})
+        )
         if serializer.is_valid():
             threat_scenario = serializer.save(project=project)
             if 'attack_steps' in request.data:
@@ -759,11 +791,10 @@ class threatScenarioNoid(APIView):
                 for comp in request.data['compromises']:
                     compromise, created = Comporomises.objects.get_or_create(
                         component_id=comp['component_id'],
-                        compromised_CIA_part=comp['compromised_part_cia'],
+                        compromised_CIA_part=parse_cia_bitmask(comp['compromised_part_cia']),
                         threat_scenario=threat_scenario,
                         project=project
                     )
-                    threat_scenario.compromises.add(compromise)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -780,7 +811,10 @@ class threatScenarioComponentId(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        threat_scenarios = ThreatScenario.objects.filter(compromises__component_id=pk, project=project).distinct()
+        threat_scenarios = ThreatScenario.objects.filter(
+            compromise_items__component_id=pk,
+            project=project,
+        ).distinct()
         serializer = ThreatScenarioSerializer(threat_scenarios, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -811,7 +845,10 @@ class threatScenarioId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         threat_scenario = get_object_or_404(ThreatScenario, id=pk, project=project)
-        serializer = ThreatScenarioSerializer(threat_scenario, data=request.data)
+        serializer = ThreatScenarioSerializer(
+            threat_scenario,
+            data=build_serializer_payload(request, remove_fields={'compromises'})
+        )
         if serializer.is_valid():
             threat_scenario = serializer.save()
             if 'attack_steps' in request.data:
@@ -825,11 +862,10 @@ class threatScenarioId(APIView):
                 for comp in request.data['compromises']:
                     compromise = Comporomises.objects.create(
                         component_id=comp['component_id'],
-                        compromised_CIA_part=comp['compromised_part_cia'],
+                        compromised_CIA_part=parse_cia_bitmask(comp['compromised_part_cia']),
                         threat_scenario=threat_scenario,
                         project=project
                     )
-                    threat_scenario.compromises.add(compromise)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -843,7 +879,11 @@ class threatScenarioId(APIView):
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
         threat_scenario = get_object_or_404(ThreatScenario, id=pk, project=project)
-        serializer = ThreatScenarioSerializer(threat_scenario, data=request.data, partial=True)
+        serializer = ThreatScenarioSerializer(
+            threat_scenario,
+            data=build_serializer_payload(request, remove_fields={'compromises'}),
+            partial=True
+        )
         if serializer.is_valid():
             threat_scenario = serializer.save()
             if 'attack_steps' in request.data:
@@ -857,11 +897,10 @@ class threatScenarioId(APIView):
                 for comp in request.data['compromises']:
                     compromise = Comporomises.objects.create(
                         component_id=comp['component_id'],
-                        compromised_CIA_part=comp['compromised_part_cia'],
+                        compromised_CIA_part=parse_cia_bitmask(comp['compromised_part_cia']),
                         threat_scenario=threat_scenario,
                         project=project
                     )
-                    threat_scenario.compromises.add(compromise)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -14,9 +14,6 @@ urlpatterns = [
     path("technology/", views.technologyNoid.as_view(), name="Get all technologies"),
     path("technology/<int:pk>/", views.technologyId.as_view(), name="Technology detail"),
     
-    # Existing endpoints
-    path("nodes/", views.getAllNodes.as_view(), name="Get all nodes"),
-    path("nodes/<int:pk>/", views.getNodeDetail.as_view(), name="Node detail"),
     path("component/", views.componentNoid.as_view(), name="Get all components"),
     path("component/<int:pk>/", views.componentId.as_view(), name="Component detail"),
     path("damage_scenario/", views.damageScenarioNoid.as_view(), name="Get all damage scenarios"),
