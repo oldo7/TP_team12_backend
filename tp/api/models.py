@@ -103,9 +103,13 @@ class Component(models.Model):
     @property
     def mapped_threat_scenarios(self):
         return ThreatScenario.objects.filter(
-            models.Q(compromise_items__component=self) |
-            models.Q(attack_steps__component=self) |
-            models.Q(damage_scenarios__component=self)
+            components=self
+        ).distinct()
+
+    @property
+    def mapped_damage_scenarios(self):
+        return DamageScenario.objects.filter(
+            threat_scenarios__components=self
         ).distinct()
 
 
@@ -186,6 +190,8 @@ class AttackStep(models.Model):
 class ThreatScenario(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    components = models.ManyToManyField(
+        Component, blank=True, related_name='threat_scenarios')
     attack_steps = models.ManyToManyField(
         AttackStep, blank=True, related_name='threat_scenarios')
     threat_class = models.ForeignKey(
@@ -211,8 +217,6 @@ class DamageScenario(models.Model):
     finantial_impact = models.PositiveSmallIntegerField(choices=ImpactRating.choices)
     operational_impact = models.PositiveSmallIntegerField(choices=ImpactRating.choices)
     privacy_impact = models.PositiveSmallIntegerField(choices=ImpactRating.choices)
-    component = models.ForeignKey(Component, null=True, blank=True,
-                                  on_delete=models.SET_NULL, related_name='damage_scenarios')
     project = models.ForeignKey(Project, on_delete=models.CASCADE,
                                 related_name='damage_scenarios', null=True, blank=True)
 

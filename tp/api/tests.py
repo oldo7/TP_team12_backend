@@ -51,7 +51,6 @@ class TaraMappingTests(APITestCase):
             finantial_impact=ImpactRating.MODERATE,
             operational_impact=ImpactRating.MAJOR,
             privacy_impact=ImpactRating.NEGLIGIBLE,
-            component=self.component,
             project=self.project,
         )
         self.threat_scenario = ThreatScenario.objects.create(
@@ -60,6 +59,7 @@ class TaraMappingTests(APITestCase):
         )
         self.threat_scenario.attack_steps.add(self.attack_step)
         self.threat_scenario.damage_scenarios.add(self.damage_scenario)
+        self.threat_scenario.components.add(self.component)
 
     def test_attack_step_detail_lists_mapped_damage_scenarios(self):
         response = self.client.get(
@@ -121,6 +121,7 @@ class TaraMappingTests(APITestCase):
             list(attack_step.threat_scenarios.values_list('name', flat=True)),
             ['Spoof valid braking message'],
         )
+        self.assertEqual(list(attack_step.threat_scenarios.get().components.all()), [self.component])
         self.assertEqual(
             list(damage_scenario.threat_scenarios.values_list('name', flat=True)),
             ['Spoof valid braking message'],
@@ -150,7 +151,6 @@ class TaraMappingTests(APITestCase):
         )
 
         self.assertEqual(damage_scenario.project, self.project)
-        self.assertEqual(damage_scenario.component, self.component)
         self.assertEqual(damage_scenario.affected_CIA_parts, CIABitmask.NONE)
         self.assertEqual(damage_scenario.impact_scale, ImpactRating.NEGLIGIBLE)
         self.assertEqual(attack_step.mapped_damage_scenarios.get(), damage_scenario)
@@ -159,6 +159,7 @@ class TaraMappingTests(APITestCase):
             list(attack_step.threat_scenarios.values_list('name', flat=True)),
             ['Threat scenario for Exploit diagnostic session'],
         )
+        self.assertEqual(list(attack_step.threat_scenarios.get().components.all()), [self.component])
 
     def test_damage_scenario_create_can_reuse_existing_threat_scenario_by_name(self):
         response = self.client.post(
@@ -171,7 +172,6 @@ class TaraMappingTests(APITestCase):
                 'finantial_impact': 'Moderate',
                 'operational_impact': 'Major',
                 'privacy_impact': 'Negligible',
-                'component_id': self.component.id,
                 'project_id': self.project.id,
                 'threat_scenario_name': self.threat_scenario.name,
             },
@@ -205,12 +205,14 @@ class TaraMappingTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         compromise = Comporomises.objects.get(threat_scenario_id=response.data['id'])
+        threat_scenario = ThreatScenario.objects.get(id=response.data['id'])
         self.assertEqual(
             compromise.compromised_CIA_part,
             CIABitmask.CONFIDENTIALITY | CIABitmask.INTEGRITY,
         )
+        self.assertEqual(list(threat_scenario.components.all()), [self.component])
 
-    def test_threat_scenario_component_endpoint_filters_by_compromise_items(self):
+    def test_threat_scenario_component_endpoint_filters_by_involved_components(self):
         Comporomises.objects.create(
             compromised_CIA_part=CIABitmask.CONFIDENTIALITY,
             threat_scenario=self.threat_scenario,

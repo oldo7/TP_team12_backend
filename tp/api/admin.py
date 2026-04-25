@@ -8,8 +8,7 @@ class ComponentAdmin(admin.ModelAdmin):
 
 @admin.register(DamageScenario)
 class DamageScenarioAdmin(admin.ModelAdmin):
-    list_display = ['id', 'name', 'component']
-    list_filter = ['component']
+    list_display = ['id', 'name']
 
 @admin.register(Control)
 class ControlAdmin(admin.ModelAdmin):
@@ -27,7 +26,7 @@ class AttackStepAdmin(admin.ModelAdmin):
 class ThreatScenarioAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'threat_class']
     list_filter = ['threat_class']
-    filter_horizontal = ['attack_steps', 'damage_scenarios']
+    filter_horizontal = ['components', 'attack_steps', 'damage_scenarios']
 
 @admin.register(Technology)
 class TechnologyAdmin(admin.ModelAdmin):

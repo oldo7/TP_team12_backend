@@ -172,6 +172,11 @@ class ControlSimpleSerializer(serializers.ModelSerializer):
         model = Control
         fields = ["id", "name"]
 
+class ComponentSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Component
+        fields = ["id", "name"]
+
 class AttackStepSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttackStep
@@ -205,12 +210,6 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
         queryset=ThreatScenario.objects.all(),
         required=False
     )
-    component_id = serializers.PrimaryKeyRelatedField(
-        source='component',
-        queryset=Component.objects.all(),
-        required=False,
-        allow_null=True
-    )
     project_id = serializers.PrimaryKeyRelatedField(
         source='project',
         queryset=Project.objects.all(),
@@ -223,7 +222,7 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
-            "privacy_impact", "component_id", "threat_scenarios", "project", "project_id"
+            "privacy_impact", "threat_scenarios", "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
@@ -242,7 +241,7 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
-            "privacy_impact", "affected_cia_binary", "component",
+            "privacy_impact", "affected_cia_binary",
             "threat_scenarios", "attack_steps", "project"
         ]
 
@@ -369,6 +368,11 @@ class AttackStepDetailSerializer(serializers.ModelSerializer):
         ]
 
 class ThreatScenarioSerializer(serializers.ModelSerializer):
+    components = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Component.objects.all(),
+        required=False
+    )
     attack_steps = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=AttackStep.objects.all(),
@@ -394,7 +398,7 @@ class ThreatScenarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = ThreatScenario
         fields = [
-            "id", "name", "description", "attack_steps", "damage_scenarios",
+            "id", "name", "description", "components", "attack_steps", "damage_scenarios",
             "threat_class", "compromises", "project", "project_id"
         ]
         extra_kwargs = {
@@ -403,6 +407,7 @@ class ThreatScenarioSerializer(serializers.ModelSerializer):
         }
 
 class ThreatScenarioDetailSerializer(serializers.ModelSerializer):
+    components = ComponentSimpleSerializer(many=True, read_only=True)
     attack_steps = AttackStepSimpleSerializer(many=True, read_only=True)
     damage_scenarios = DamageScenarioSimpleSerializer(many=True, read_only=True)
     threat_class = ThreatClassSerializer(read_only=True)
@@ -411,7 +416,7 @@ class ThreatScenarioDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ThreatScenario
         fields = [
-            "id", "name", "description", "attack_steps", "damage_scenarios",
+            "id", "name", "description", "components", "attack_steps", "damage_scenarios",
             "threat_class", "compromises", "project"
         ]
     
@@ -454,7 +459,7 @@ class ComponentSerializer(serializers.ModelSerializer):
 class ComponentDetailSerializer(serializers.ModelSerializer):
     data_entity = DataEntitySerializer(many=True, read_only=True)
     technology = TechnologySerializer(many=True, read_only=True)
-    damage_scenario = DamageScenarioSerializer(many=True, read_only=True, source='damage_scenarios')
+    damage_scenario = DamageScenarioSerializer(many=True, read_only=True, source='mapped_damage_scenarios')
     control = ControlDetailSerializer(many=True, read_only=True, source='controls')
     threat_scenarios = ThreatScenarioSimpleSerializer(
         many=True, read_only=True, source='mapped_threat_scenarios')
