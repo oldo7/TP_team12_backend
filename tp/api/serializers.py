@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import *
+from .calculations import calculate_attack_feasibility, calculate_impact_level, impact_level_label
 from django.contrib.auth.models import User
 
 
@@ -183,10 +184,19 @@ class AttackStepSimpleSerializer(serializers.ModelSerializer):
         fields = ["id", "name"]
 
 class DamageScenarioSimpleSerializer(serializers.ModelSerializer):
+    il = serializers.SerializerMethodField()
+    il_label = serializers.SerializerMethodField()
+
     class Meta:
         model = DamageScenario
         fields = ["id", "name", "description", "affected_CIA_parts", "impact_scale", "safety_impact",
-                  "finantial_impact", "operational_impact", "privacy_impact"]
+                  "finantial_impact", "operational_impact", "privacy_impact", "il", "il_label"]
+
+    def get_il(self, obj):
+        return calculate_impact_level(obj)
+
+    def get_il_label(self, obj):
+        return impact_level_label(calculate_impact_level(obj))
 
 class ThreatScenarioSimpleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -228,13 +238,16 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
         write_only=True
     )
     concerns = DamageScenarioConcernSerializer(many=True, required=False)
+    il = serializers.SerializerMethodField()
+    il_label = serializers.SerializerMethodField()
     
     class Meta:
         model = DamageScenario
         fields = [
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
-            "privacy_impact", "threat_scenarios", "concerns", "project", "project_id"
+            "privacy_impact", "threat_scenarios", "concerns", "il", "il_label",
+            "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
@@ -249,6 +262,12 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
         validated_data.pop('concerns', None)
         return super().update(instance, validated_data)
 
+    def get_il(self, obj):
+        return calculate_impact_level(obj)
+
+    def get_il_label(self, obj):
+        return impact_level_label(calculate_impact_level(obj))
+
 
 class DamageScenarioDetailSerializer(serializers.ModelSerializer):
     affected_cia_binary = serializers.CharField(read_only=True)
@@ -256,6 +275,8 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
     attack_steps = AttackStepSimpleSerializer(
         many=True, read_only=True, source='mapped_attack_steps')
     concerns = DamageScenarioConcernSerializer(many=True, read_only=True)
+    il = serializers.SerializerMethodField()
+    il_label = serializers.SerializerMethodField()
 
     class Meta:
         model = DamageScenario
@@ -263,8 +284,14 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
             "privacy_impact", "affected_cia_binary",
-            "threat_scenarios", "attack_steps", "concerns", "project"
+            "threat_scenarios", "attack_steps", "concerns", "il", "il_label", "project"
         ]
+
+    def get_il(self, obj):
+        return calculate_impact_level(obj)
+
+    def get_il_label(self, obj):
+        return impact_level_label(calculate_impact_level(obj))
 
 class ControlSerializer(serializers.ModelSerializer):
     fr_et = FlexibleChoiceField(
@@ -288,27 +315,61 @@ class ControlSerializer(serializers.ModelSerializer):
         required=True,
         write_only=True
     )
+    attack_potential_points = serializers.SerializerMethodField()
+    attack_potential = serializers.SerializerMethodField()
+    afl = serializers.SerializerMethodField()
+    afl_value = serializers.SerializerMethodField()
     
     class Meta:
         model = Control
         fields = [
             "id", "name", "description", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
-            "component", "attack_steps", "project", "project_id"
+            "component", "attack_steps", "attack_potential_points", "attack_potential",
+            "afl", "afl_value", "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
             'project': {'read_only': True}
         }
 
+    def get_attack_potential_points(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential_points']
+
+    def get_attack_potential(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential']
+
+    def get_afl(self, obj):
+        return calculate_attack_feasibility(obj)['afl']
+
+    def get_afl_value(self, obj):
+        return calculate_attack_feasibility(obj)['afl_value']
+
 class ControlDetailSerializer(serializers.ModelSerializer):
     attack_steps = AttackStepSimpleSerializer(many=True, read_only=True)
+    attack_potential_points = serializers.SerializerMethodField()
+    attack_potential = serializers.SerializerMethodField()
+    afl = serializers.SerializerMethodField()
+    afl_value = serializers.SerializerMethodField()
     
     class Meta:
         model = Control
         fields = [
             "id", "name", "description", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
-            "component", "attack_steps", "project"
+            "component", "attack_steps", "attack_potential_points", "attack_potential",
+            "afl", "afl_value", "project"
         ]
+
+    def get_attack_potential_points(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential_points']
+
+    def get_attack_potential(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential']
+
+    def get_afl(self, obj):
+        return calculate_attack_feasibility(obj)['afl']
+
+    def get_afl_value(self, obj):
+        return calculate_attack_feasibility(obj)['afl_value']
 
 class ThreatClassSerializer(serializers.ModelSerializer):
     project_id = serializers.PrimaryKeyRelatedField(
@@ -359,17 +420,35 @@ class AttackStepSerializer(serializers.ModelSerializer):
         required=True,
         write_only=True
     )
+    attack_potential_points = serializers.SerializerMethodField()
+    attack_potential = serializers.SerializerMethodField()
+    afl = serializers.SerializerMethodField()
+    afl_value = serializers.SerializerMethodField()
     
     class Meta:
         model = AttackStep
         fields = [
             "id", "name", "description", "required_access", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
-            "component", "previous_steps", "threat_class", "threat_scenarios", "controls", "project", "project_id"
+            "component", "previous_steps", "threat_class", "threat_scenarios", "controls",
+            "attack_potential_points", "attack_potential", "afl", "afl_value",
+            "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
             'project': {'read_only': True}
         }
+
+    def get_attack_potential_points(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential_points']
+
+    def get_attack_potential(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential']
+
+    def get_afl(self, obj):
+        return calculate_attack_feasibility(obj)['afl']
+
+    def get_afl_value(self, obj):
+        return calculate_attack_feasibility(obj)['afl_value']
 
 class AttackStepDetailSerializer(serializers.ModelSerializer):
     previous_steps = AttackStepSimpleSerializer(many=True, read_only=True)
@@ -379,14 +458,31 @@ class AttackStepDetailSerializer(serializers.ModelSerializer):
     threat_class = ThreatClassSerializer(read_only=True)
     damage_scenarios = DamageScenarioSimpleSerializer(
         many=True, read_only=True, source='mapped_damage_scenarios')
+    attack_potential_points = serializers.SerializerMethodField()
+    attack_potential = serializers.SerializerMethodField()
+    afl = serializers.SerializerMethodField()
+    afl_value = serializers.SerializerMethodField()
     
     class Meta:
         model = AttackStep
         fields = [
             "id", "name", "description", "required_access", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
             "component", "previous_steps", "next_steps", "threat_class", "threat_scenarios",
-            "damage_scenarios", "controls", "project"
+            "damage_scenarios", "controls", "attack_potential_points", "attack_potential",
+            "afl", "afl_value", "project"
         ]
+
+    def get_attack_potential_points(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential_points']
+
+    def get_attack_potential(self, obj):
+        return calculate_attack_feasibility(obj)['attack_potential']
+
+    def get_afl(self, obj):
+        return calculate_attack_feasibility(obj)['afl']
+
+    def get_afl_value(self, obj):
+        return calculate_attack_feasibility(obj)['afl_value']
 
 class ThreatScenarioSerializer(serializers.ModelSerializer):
     components = serializers.PrimaryKeyRelatedField(

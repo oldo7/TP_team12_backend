@@ -4,6 +4,12 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from .models import *
 from .serializers import *
+from .calculations import (
+    best_attack_feasibility_for_threat_scenario,
+    calculate_impact_level,
+    calculate_risk_level,
+    impact_level_label,
+)
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
@@ -313,6 +319,81 @@ class ProjectDetailView(APIView):
         project = get_object_or_404(Project, id=pk, owner=request.user)
         project.delete()
         return Response({'message': 'Project deleted'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class riskNoid(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        rows = []
+        threat_scenarios = (
+            ThreatScenario.objects
+            .filter(project=project)
+            .prefetch_related(
+                'attack_steps',
+                'damage_scenarios',
+                'damage_scenarios__concerns',
+                'damage_scenarios__concerns__component',
+            )
+        )
+
+        for threat_scenario in threat_scenarios:
+            attack_feasibility = best_attack_feasibility_for_threat_scenario(threat_scenario)
+            for damage_scenario in threat_scenario.damage_scenarios.all():
+                impact_level = calculate_impact_level(damage_scenario)
+                risk_level = calculate_risk_level(
+                    impact_level,
+                    attack_feasibility['afl_value'],
+                )
+                concerns = list(damage_scenario.concerns.all())
+
+                if not concerns and damage_scenario.affected_CIA_parts:
+                    rows.append({
+                        'id': f'ts-{threat_scenario.id}-ds-{damage_scenario.id}-legacy',
+                        'title': f'{threat_scenario.name} / {damage_scenario.name}',
+                        'threat_scenario': threat_scenario.id,
+                        'threat_scenario_name': threat_scenario.name,
+                        'damage_scenario': damage_scenario.id,
+                        'damage_scenario_name': damage_scenario.name,
+                        'concern': None,
+                        'component': None,
+                        'component_name': None,
+                        'affected_CIA_parts': damage_scenario.affected_CIA_parts,
+                        'il': impact_level,
+                        'il_label': impact_level_label(impact_level),
+                        'rl': risk_level,
+                        **attack_feasibility,
+                    })
+                    continue
+
+                for concern in concerns:
+                    rows.append({
+                        'id': f'ts-{threat_scenario.id}-ds-{damage_scenario.id}-concern-{concern.id}',
+                        'title': f'{threat_scenario.name} / {damage_scenario.name} / {concern.component.name}',
+                        'threat_scenario': threat_scenario.id,
+                        'threat_scenario_name': threat_scenario.name,
+                        'damage_scenario': damage_scenario.id,
+                        'damage_scenario_name': damage_scenario.name,
+                        'concern': concern.id,
+                        'component': concern.component_id,
+                        'component_name': concern.component.name,
+                        'affected_CIA_parts': concern.affected_CIA_parts,
+                        'il': impact_level,
+                        'il_label': impact_level_label(impact_level),
+                        'rl': risk_level,
+                        **attack_feasibility,
+                    })
+
+        return Response(rows, status=status.HTTP_200_OK)
 
 # TECHNOLOGY ENDPOINTS
 class technologyNoid(APIView):

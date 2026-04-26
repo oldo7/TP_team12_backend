@@ -77,6 +77,10 @@ class TaraMappingTests(APITestCase):
             [scenario['id'] for scenario in response.data['threat_scenarios']],
             [self.threat_scenario.id],
         )
+        self.assertEqual(response.data['attack_potential_points'], 0)
+        self.assertEqual(response.data['attack_potential'], 'Basic')
+        self.assertEqual(response.data['afl'], 'High')
+        self.assertEqual(response.data['afl_value'], 5)
 
     def test_damage_scenario_detail_lists_mapped_attack_steps(self):
         response = self.client.get(
@@ -91,6 +95,8 @@ class TaraMappingTests(APITestCase):
         )
         self.assertEqual(response.data['affected_CIA_parts'], CIABitmask.AVAILABILITY)
         self.assertEqual(response.data['affected_cia_binary'], '001')
+        self.assertEqual(response.data['il'], ImpactRating.MAJOR)
+        self.assertEqual(response.data['il_label'], 'Major')
         self.assertEqual(
             [scenario['id'] for scenario in response.data['threat_scenarios']],
             [self.threat_scenario.id],
@@ -292,6 +298,32 @@ class TaraMappingTests(APITestCase):
         )
         self.damage_scenario.refresh_from_db()
         self.assertEqual(self.damage_scenario.affected_CIA_parts, CIABitmask.NONE)
+
+    def test_risk_endpoint_generates_rows_from_damage_concerns(self):
+        DamageScenarioConcern.objects.create(
+            damage_scenario=self.damage_scenario,
+            component=self.component,
+            affected_CIA_parts=CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+        )
+
+        response = self.client.get('/api/risk/', {'project_id': self.project.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        risk = response.data[0]
+        self.assertEqual(risk['threat_scenario'], self.threat_scenario.id)
+        self.assertEqual(risk['damage_scenario'], self.damage_scenario.id)
+        self.assertEqual(risk['component'], self.component.id)
+        self.assertEqual(
+            risk['affected_CIA_parts'],
+            CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+        )
+        self.assertEqual(risk['attack_potential_points'], 0)
+        self.assertEqual(risk['afl'], 'High')
+        self.assertEqual(risk['afl_value'], 5)
+        self.assertEqual(risk['il'], ImpactRating.MAJOR)
+        self.assertEqual(risk['il_label'], 'Major')
+        self.assertEqual(risk['rl'], 4)
 
     def test_threat_scenario_compromise_accepts_cia_bitmask(self):
         response = self.client.post(
