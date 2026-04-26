@@ -134,6 +134,80 @@ def sync_threat_scenario_components(threat_scenario, project, payload):
     threat_scenario.components.add(*compromise_components)
 
 
+def allowed_damage_concern_components(damage_scenario, project):
+    return Component.objects.filter(
+        threat_scenarios__damage_scenarios=damage_scenario,
+        project=project,
+    ).distinct()
+
+
+def sync_damage_scenario_cia_summary(damage_scenario, force=False):
+    concerns = list(damage_scenario.concerns.all())
+    if not concerns and not force:
+        return
+
+    cia_summary = CIABitmask.NONE
+    for concern in concerns:
+        cia_summary |= concern.affected_CIA_parts
+
+    if damage_scenario.affected_CIA_parts != cia_summary:
+        damage_scenario.affected_CIA_parts = cia_summary
+        damage_scenario.save(update_fields=['affected_CIA_parts'])
+
+
+def prune_invalid_damage_scenario_concerns(damage_scenario, project):
+    had_concerns = damage_scenario.concerns.exists()
+    allowed_component_ids = set(
+        allowed_damage_concern_components(damage_scenario, project)
+        .values_list('id', flat=True)
+    )
+    damage_scenario.concerns.exclude(component_id__in=allowed_component_ids).delete()
+    sync_damage_scenario_cia_summary(damage_scenario, force=had_concerns)
+
+
+def prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project):
+    for damage_scenario in threat_scenario.damage_scenarios.filter(project=project):
+        prune_invalid_damage_scenario_concerns(damage_scenario, project)
+
+
+def sync_damage_scenario_concerns(damage_scenario, project, payload):
+    if 'concerns' not in payload:
+        prune_invalid_damage_scenario_concerns(damage_scenario, project)
+        return
+
+    concerns_payload = payload.get('concerns') or []
+    allowed_component_ids = set(
+        allowed_damage_concern_components(damage_scenario, project)
+        .values_list('id', flat=True)
+    )
+
+    next_component_ids = set()
+    for concern_payload in concerns_payload:
+        component_id = concern_payload.get('component')
+        if component_id is None:
+            raise ValueError('Each concern must include a component.')
+        component_id = int(component_id)
+        if component_id not in allowed_component_ids:
+            raise ValueError(
+                'Damage scenario concerns can only reference components from linked threat scenarios.'
+            )
+
+        affected_cia_parts = parse_cia_bitmask(concern_payload.get('affected_CIA_parts'))
+        if affected_cia_parts == CIABitmask.NONE:
+            continue
+
+        component = get_object_or_404(Component, id=component_id, project=project)
+        DamageScenarioConcern.objects.update_or_create(
+            damage_scenario=damage_scenario,
+            component=component,
+            defaults={'affected_CIA_parts': affected_cia_parts},
+        )
+        next_component_ids.add(component_id)
+
+    damage_scenario.concerns.exclude(component_id__in=next_component_ids).delete()
+    sync_damage_scenario_cia_summary(damage_scenario, force=True)
+
+
 def truncate_model_name(model_class, value):
     max_length = model_class._meta.get_field('name').max_length
     return value[:max_length]
@@ -483,9 +557,14 @@ class damageScenarioNoid(APIView):
         
         serializer = DamageScenarioSerializer(data=build_serializer_payload(request))
         if serializer.is_valid():
-            damage_scenario = serializer.save(project=project)
-            sync_threat_scenarios(damage_scenario, project, request.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            try:
+                with transaction.atomic():
+                    damage_scenario = serializer.save(project=project)
+                    sync_threat_scenarios(damage_scenario, project, request.data)
+                    sync_damage_scenario_concerns(damage_scenario, project, request.data)
+            except ValueError as error:
+                return Response({'concerns': [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(DamageScenarioSerializer(damage_scenario).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class damageScenarioComponentId(APIView):
@@ -537,9 +616,14 @@ class damageScenarioId(APIView):
         damage_scenario = get_object_or_404(DamageScenario, id=pk, project=project)
         serializer = DamageScenarioSerializer(damage_scenario, data=build_serializer_payload(request))
         if serializer.is_valid():
-            damage_scenario = serializer.save()
-            sync_threat_scenarios(damage_scenario, project, request.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            try:
+                with transaction.atomic():
+                    damage_scenario = serializer.save()
+                    sync_threat_scenarios(damage_scenario, project, request.data)
+                    sync_damage_scenario_concerns(damage_scenario, project, request.data)
+            except ValueError as error:
+                return Response({'concerns': [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(DamageScenarioSerializer(damage_scenario).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def patch(self, request, pk, format=None):
@@ -554,9 +638,14 @@ class damageScenarioId(APIView):
         damage_scenario = get_object_or_404(DamageScenario, id=pk, project=project)
         serializer = DamageScenarioSerializer(damage_scenario, data=build_serializer_payload(request), partial=True)
         if serializer.is_valid():
-            damage_scenario = serializer.save()
-            sync_threat_scenarios(damage_scenario, project, request.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            try:
+                with transaction.atomic():
+                    damage_scenario = serializer.save()
+                    sync_threat_scenarios(damage_scenario, project, request.data)
+                    sync_damage_scenario_concerns(damage_scenario, project, request.data)
+            except ValueError as error:
+                return Response({'concerns': [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(DamageScenarioSerializer(damage_scenario).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk, format=None):
@@ -867,6 +956,7 @@ class threatScenarioNoid(APIView):
                 damage_scenarios = DamageScenario.objects.filter(id__in=request.data['damage_scenarios'], project=project)
                 threat_scenario.damage_scenarios.set(damage_scenarios)
             sync_threat_scenario_components(threat_scenario, project, request.data)
+            prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             if 'compromises' in request.data:
                 for comp in request.data['compromises']:
                     compromise, created = Comporomises.objects.get_or_create(
@@ -876,6 +966,7 @@ class threatScenarioNoid(APIView):
                         project=project
                     )
                 sync_threat_scenario_components(threat_scenario, project, request.data)
+                prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -936,6 +1027,7 @@ class threatScenarioId(APIView):
                 damage_scenarios = DamageScenario.objects.filter(id__in=request.data['damage_scenarios'], project=project)
                 threat_scenario.damage_scenarios.set(damage_scenarios)
             sync_threat_scenario_components(threat_scenario, project, request.data)
+            prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             if 'compromises' in request.data:
                 threat_scenario.compromise_items.all().delete()
                 for comp in request.data['compromises']:
@@ -946,6 +1038,7 @@ class threatScenarioId(APIView):
                         project=project
                     )
                 sync_threat_scenario_components(threat_scenario, project, request.data)
+                prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -973,6 +1066,7 @@ class threatScenarioId(APIView):
                 damage_scenarios = DamageScenario.objects.filter(id__in=request.data['damage_scenarios'], project=project)
                 threat_scenario.damage_scenarios.set(damage_scenarios)
             sync_threat_scenario_components(threat_scenario, project, request.data)
+            prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             if 'compromises' in request.data:
                 threat_scenario.compromise_items.all().delete()
                 for comp in request.data['compromises']:
@@ -983,6 +1077,7 @@ class threatScenarioId(APIView):
                         project=project
                     )
                 sync_threat_scenario_components(threat_scenario, project, request.data)
+                prune_damage_scenario_concerns_for_threat_scenario(threat_scenario, project)
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

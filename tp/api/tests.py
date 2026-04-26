@@ -7,6 +7,7 @@ from .models import (
     Component,
     Comporomises,
     DamageScenario,
+    DamageScenarioConcern,
     ElapsedTimeScore,
     EquipmentScore,
     ImpactRating,
@@ -186,6 +187,111 @@ class TaraMappingTests(APITestCase):
             damage_scenario.threat_scenarios.first().id,
             self.threat_scenario.id,
         )
+
+    def test_damage_scenario_concerns_are_limited_to_linked_threat_scenario_components(self):
+        second_component = Component.objects.create(
+            name='Brake ECU',
+            description='Brake controller',
+            project=self.project,
+        )
+        self.threat_scenario.components.add(second_component)
+
+        response = self.client.patch(
+            f'/api/damage_scenario/{self.damage_scenario.id}/',
+            {
+                'project_id': self.project.id,
+                'threat_scenarios': [self.threat_scenario.id],
+                'concerns': [
+                    {
+                        'component': self.component.id,
+                        'affected_CIA_parts': '100',
+                    },
+                    {
+                        'component': second_component.id,
+                        'affected_CIA_parts': '101',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.damage_scenario.refresh_from_db()
+        self.assertEqual(
+            self.damage_scenario.affected_CIA_parts,
+            CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+        )
+        self.assertEqual(
+            list(
+                self.damage_scenario.concerns.order_by('component_id').values_list(
+                    'component_id', 'affected_CIA_parts'
+                )
+            ),
+            [
+                (self.component.id, CIABitmask.CONFIDENTIALITY),
+                (
+                    second_component.id,
+                    CIABitmask.CONFIDENTIALITY | CIABitmask.AVAILABILITY,
+                ),
+            ],
+        )
+        self.assertEqual(len(response.data['concerns']), 2)
+
+    def test_damage_scenario_rejects_concern_for_unlinked_component(self):
+        other_component = Component.objects.create(
+            name='Infotainment ECU',
+            description='Out of scope component',
+            project=self.project,
+        )
+
+        response = self.client.patch(
+            f'/api/damage_scenario/{self.damage_scenario.id}/',
+            {
+                'project_id': self.project.id,
+                'threat_scenarios': [self.threat_scenario.id],
+                'concerns': [
+                    {
+                        'component': other_component.id,
+                        'affected_CIA_parts': '001',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(DamageScenarioConcern.objects.count(), 0)
+
+    def test_threat_scenario_component_sync_prunes_invalid_damage_concerns(self):
+        transient_component = Component.objects.create(
+            name='Transient ECU',
+            description='Initially in threat scenario',
+            project=self.project,
+        )
+        self.threat_scenario.components.add(transient_component)
+        DamageScenarioConcern.objects.create(
+            damage_scenario=self.damage_scenario,
+            component=transient_component,
+            affected_CIA_parts=CIABitmask.CONFIDENTIALITY,
+        )
+        self.damage_scenario.affected_CIA_parts = CIABitmask.CONFIDENTIALITY
+        self.damage_scenario.save(update_fields=['affected_CIA_parts'])
+
+        response = self.client.patch(
+            f'/api/threat_scenario/{self.threat_scenario.id}/',
+            {
+                'project_id': self.project.id,
+                'components': [self.component.id],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            DamageScenarioConcern.objects.filter(component=transient_component).exists()
+        )
+        self.damage_scenario.refresh_from_db()
+        self.assertEqual(self.damage_scenario.affected_CIA_parts, CIABitmask.NONE)
 
     def test_threat_scenario_compromise_accepts_cia_bitmask(self):
         response = self.client.post(

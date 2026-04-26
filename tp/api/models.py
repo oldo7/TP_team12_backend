@@ -234,6 +234,37 @@ class DamageScenario(models.Model):
         return format(self.affected_CIA_parts, '03b')
 
 
+class DamageScenarioConcern(models.Model):
+    damage_scenario = models.ForeignKey(
+        DamageScenario,
+        on_delete=models.CASCADE,
+        related_name='concerns',
+    )
+    component = models.ForeignKey(
+        Component,
+        on_delete=models.CASCADE,
+        related_name='damage_scenario_concerns',
+    )
+    affected_CIA_parts = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(7)],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['damage_scenario', 'component'],
+                name='unique_damage_scenario_component_concern',
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.damage_scenario} - {self.component} - {self.affected_CIA_parts}"
+
+    @property
+    def affected_cia_binary(self):
+        return format(self.affected_CIA_parts, '03b')
+
+
 class Comporomises(models.Model):
     compromised_CIA_part = models.PositiveSmallIntegerField(
         default=CIABitmask.NONE,

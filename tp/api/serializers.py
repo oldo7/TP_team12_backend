@@ -193,6 +193,17 @@ class ThreatScenarioSimpleSerializer(serializers.ModelSerializer):
         model = ThreatScenario
         fields = ["id", "name"]
 
+class DamageScenarioConcernSerializer(serializers.ModelSerializer):
+    affected_CIA_parts = CIABitmaskField()
+    affected_cia_binary = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = DamageScenarioConcern
+        fields = ["id", "component", "affected_CIA_parts", "affected_cia_binary"]
+        extra_kwargs = {
+            'id': {'read_only': False, 'required': False},
+        }
+
 class DamageScenarioSerializer(serializers.ModelSerializer):
     affected_CIA_parts = CIABitmaskField()
     impact_scale = FlexibleChoiceField(
@@ -216,18 +227,27 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
         required=True,
         write_only=True
     )
+    concerns = DamageScenarioConcernSerializer(many=True, required=False)
     
     class Meta:
         model = DamageScenario
         fields = [
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
-            "privacy_impact", "threat_scenarios", "project", "project_id"
+            "privacy_impact", "threat_scenarios", "concerns", "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
             'project': {'read_only': True}
         }
+
+    def create(self, validated_data):
+        validated_data.pop('concerns', None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('concerns', None)
+        return super().update(instance, validated_data)
 
 
 class DamageScenarioDetailSerializer(serializers.ModelSerializer):
@@ -235,6 +255,7 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
     threat_scenarios = ThreatScenarioSimpleSerializer(many=True, read_only=True)
     attack_steps = AttackStepSimpleSerializer(
         many=True, read_only=True, source='mapped_attack_steps')
+    concerns = DamageScenarioConcernSerializer(many=True, read_only=True)
 
     class Meta:
         model = DamageScenario
@@ -242,7 +263,7 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
             "id", "name", "description", "affected_CIA_parts", "impact_scale",
             "safety_impact", "finantial_impact", "operational_impact",
             "privacy_impact", "affected_cia_binary",
-            "threat_scenarios", "attack_steps", "project"
+            "threat_scenarios", "attack_steps", "concerns", "project"
         ]
 
 class ControlSerializer(serializers.ModelSerializer):
