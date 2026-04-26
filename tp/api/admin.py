@@ -20,7 +20,7 @@ class ControlAdmin(admin.ModelAdmin):
 class AttackStepAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'required_access', 'component', 'threat_class']
     list_filter = ['component', 'threat_class']
-    filter_horizontal = ['previous_steps', 'controls']
+    filter_horizontal = ['previous_steps']
 
 @admin.register(ThreatScenario)
 class ThreatScenarioAdmin(admin.ModelAdmin):
@@ -41,6 +41,12 @@ class DataEntityAdmin(admin.ModelAdmin):
 @admin.register(ThreatClass)
 class ThreatClassAdmin(admin.ModelAdmin):
     list_display = ['id', 'name', 'description']
+
+@admin.register(ControlGroup)
+class ControlGroupAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'project', 'created_at']
+    list_filter = ['project']
+    filter_horizontal = ['controls']
 
 @admin.register(Comporomises)
 class ComporomisesAdmin(admin.ModelAdmin):

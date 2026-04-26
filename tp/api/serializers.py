@@ -168,6 +168,11 @@ class DataEntitySerializer(serializers.ModelSerializer):
             'project': {'read_only': True}
         }
 
+class ControlClassSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ControlClass
+        fields = ["id", "name", "description", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq"]
+
 class ControlSimpleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Control
@@ -189,7 +194,7 @@ class DamageScenarioSimpleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DamageScenario
-        fields = ["id", "name", "description", "affected_CIA_parts", "impact_scale", "safety_impact",
+        fields = ["id", "name", "description", "affected_CIA_parts", "safety_impact",
                   "finantial_impact", "operational_impact", "privacy_impact", "il", "il_label"]
 
     def get_il(self, obj):
@@ -216,8 +221,6 @@ class DamageScenarioConcernSerializer(serializers.ModelSerializer):
 
 class DamageScenarioSerializer(serializers.ModelSerializer):
     affected_CIA_parts = CIABitmaskField()
-    impact_scale = FlexibleChoiceField(
-        choices=ImpactRating.choices, aliases=LEGACY_IMPACT_ALIASES)
     safety_impact = FlexibleChoiceField(
         choices=ImpactRating.choices, aliases=LEGACY_IMPACT_ALIASES)
     finantial_impact = FlexibleChoiceField(
@@ -244,7 +247,7 @@ class DamageScenarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = DamageScenario
         fields = [
-            "id", "name", "description", "affected_CIA_parts", "impact_scale",
+            "id", "name", "description", "affected_CIA_parts",
             "safety_impact", "finantial_impact", "operational_impact",
             "privacy_impact", "threat_scenarios", "concerns", "il", "il_label",
             "project", "project_id"
@@ -281,7 +284,7 @@ class DamageScenarioDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = DamageScenario
         fields = [
-            "id", "name", "description", "affected_CIA_parts", "impact_scale",
+            "id", "name", "description", "affected_CIA_parts",
             "safety_impact", "finantial_impact", "operational_impact",
             "privacy_impact", "affected_cia_binary",
             "threat_scenarios", "attack_steps", "concerns", "il", "il_label", "project"
@@ -305,8 +308,13 @@ class ControlSerializer(serializers.ModelSerializer):
     fr_eq = FlexibleChoiceField(
         choices=EquipmentScore.choices, aliases=LEGACY_EQ_ALIASES)
     attack_steps = serializers.PrimaryKeyRelatedField(
-        many=True, 
-        queryset=AttackStep.objects.all(), 
+        many=True,
+        queryset=AttackStep.objects.all(),
+        required=False
+    )
+    threat_scenarios = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=ThreatScenario.objects.all(),
         required=False
     )
     project_id = serializers.PrimaryKeyRelatedField(
@@ -319,13 +327,13 @@ class ControlSerializer(serializers.ModelSerializer):
     attack_potential = serializers.SerializerMethodField()
     afl = serializers.SerializerMethodField()
     afl_value = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Control
         fields = [
-            "id", "name", "description", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
-            "component", "attack_steps", "attack_potential_points", "attack_potential",
-            "afl", "afl_value", "project", "project_id"
+            "id", "name", "description", "control_class", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
+            "component", "attack_steps", "threat_scenarios", "attack_potential_points",
+            "attack_potential", "afl", "afl_value", "project", "project_id"
         ]
         extra_kwargs = {
             'name': {'max_length': 100},
@@ -346,17 +354,19 @@ class ControlSerializer(serializers.ModelSerializer):
 
 class ControlDetailSerializer(serializers.ModelSerializer):
     attack_steps = AttackStepSimpleSerializer(many=True, read_only=True)
+    threat_scenarios = ThreatScenarioSimpleSerializer(many=True, read_only=True)
+    control_class = ControlClassSerializer(read_only=True)
     attack_potential_points = serializers.SerializerMethodField()
     attack_potential = serializers.SerializerMethodField()
     afl = serializers.SerializerMethodField()
     afl_value = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Control
         fields = [
-            "id", "name", "description", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
-            "component", "attack_steps", "attack_potential_points", "attack_potential",
-            "afl", "afl_value", "project"
+            "id", "name", "description", "control_class", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
+            "component", "attack_steps", "threat_scenarios", "attack_potential_points",
+            "attack_potential", "afl", "afl_value", "project"
         ]
 
     def get_attack_potential_points(self, obj):
@@ -596,10 +606,70 @@ class ComporomisesSerializer(serializers.ModelSerializer):
         required=True,
         write_only=True
     )
-    
+
     class Meta:
         model = Comporomises
         fields = ["id", "compromised_CIA_part", "compromised_cia_binary", "threat_scenario", "component", "project", "project_id"]
         extra_kwargs = {
             'project': {'read_only': True}
+        }
+
+
+class ControlGroupSerializer(serializers.ModelSerializer):
+    controls = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Control.objects.all(),
+        required=False,
+    )
+
+    class Meta:
+        model = ControlGroup
+        fields = ["id", "name", "description", "controls", "project", "created_at"]
+        extra_kwargs = {
+            'project': {'read_only': True},
+            'created_at': {'read_only': True},
+        }
+
+
+class ControlGroupDetailSerializer(serializers.ModelSerializer):
+    controls = ControlSimpleSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ControlGroup
+        fields = ["id", "name", "description", "controls", "project", "created_at"]
+        extra_kwargs = {
+            'created_at': {'read_only': True},
+        }
+
+
+class CybersecurityGoalSerializer(serializers.ModelSerializer):
+    damage_scenarios = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=DamageScenario.objects.all(), required=False)
+    controls = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Control.objects.all(), required=False)
+    project_id = serializers.PrimaryKeyRelatedField(
+        source='project', queryset=Project.objects.all(), required=True, write_only=True)
+
+    class Meta:
+        model = CybersecurityGoal
+        fields = ['id', 'name', 'description', 'cal', 'damage_scenarios', 'controls',
+                  'project', 'project_id']
+        extra_kwargs = {'project': {'read_only': True}}
+
+
+class CybersecurityGoalDetailSerializer(serializers.ModelSerializer):
+    damage_scenarios = DamageScenarioSimpleSerializer(many=True, read_only=True)
+    controls = ControlSimpleSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CybersecurityGoal
+        fields = ['id', 'name', 'description', 'cal', 'damage_scenarios', 'controls', 'project']
+
+
+class RiskTreatmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RiskTreatment
+        fields = ["id", "threat_scenario", "damage_scenario", "decision", "rationale", "project"]
+        extra_kwargs = {
+            'project': {'read_only': True},
         }

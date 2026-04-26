@@ -126,9 +126,27 @@ class DataEntity(models.Model):
         return self.name
 
 
+class ControlClass(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    fr_et = models.PositiveSmallIntegerField(choices=ElapsedTimeScore.choices, default=ElapsedTimeScore.LEQ_1_DAY)
+    fr_se = models.PositiveSmallIntegerField(choices=SpecialistExpertiseScore.choices, default=SpecialistExpertiseScore.LAYMAN)
+    fr_koC = models.PositiveSmallIntegerField(choices=KnowledgeScore.choices, default=KnowledgeScore.PUBLIC)
+    fr_WoO = models.PositiveSmallIntegerField(choices=WindowOfOpportunityScore.choices, default=WindowOfOpportunityScore.UNNECESSARY_UNLIMITED)
+    fr_eq = models.PositiveSmallIntegerField(choices=EquipmentScore.choices, default=EquipmentScore.STANDARD)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
+
 class Control(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    control_class = models.ForeignKey(
+        ControlClass, null=True, blank=True, on_delete=models.SET_NULL, related_name='controls')
     fr_et = models.PositiveSmallIntegerField(choices=ElapsedTimeScore.choices)
     fr_se = models.PositiveSmallIntegerField(choices=SpecialistExpertiseScore.choices)
     fr_koC = models.PositiveSmallIntegerField(choices=KnowledgeScore.choices)
@@ -136,7 +154,8 @@ class Control(models.Model):
     fr_eq = models.PositiveSmallIntegerField(choices=EquipmentScore.choices)
     component = models.ForeignKey(
         Component, null=True, blank=True, on_delete=models.SET_NULL, related_name='controls')
-    attack_steps = models.ManyToManyField('AttackStep', blank=True)
+    attack_steps = models.ManyToManyField('AttackStep', blank=True, related_name='controls')
+    threat_scenarios = models.ManyToManyField('ThreatScenario', blank=True, related_name='controls')
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name='controls', null=True, blank=True)
 
@@ -173,7 +192,6 @@ class AttackStep(models.Model):
     )
     threat_class = models.ForeignKey(
         ThreatClass, null=True, blank=True, on_delete=models.SET_NULL)
-    controls = models.ManyToManyField(Control, blank=True)
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name='attack_steps', null=True, blank=True)
 
@@ -229,6 +247,15 @@ class DamageScenario(models.Model):
             threat_scenarios__damage_scenarios=self
         ).distinct()
 
+    def save(self, *args, **kwargs):
+        self.impact_scale = max(
+            self.safety_impact,
+            self.finantial_impact,
+            self.operational_impact,
+            self.privacy_impact,
+        )
+        super().save(*args, **kwargs)
+
     @property
     def affected_cia_binary(self):
         return format(self.affected_CIA_parts, '03b')
@@ -263,6 +290,67 @@ class DamageScenarioConcern(models.Model):
     @property
     def affected_cia_binary(self):
         return format(self.affected_CIA_parts, '03b')
+
+
+class RiskTreatmentDecision(models.TextChoices):
+    AVOID = 'avoid', 'Avoid'
+    REDUCE = 'reduce', 'Reduce'
+    SHARE = 'share', 'Share'
+    ACCEPT = 'accept', 'Accept'
+
+
+class RiskTreatment(models.Model):
+    threat_scenario = models.ForeignKey(
+        ThreatScenario, on_delete=models.CASCADE, related_name='risk_treatments')
+    damage_scenario = models.ForeignKey(
+        DamageScenario, on_delete=models.CASCADE, related_name='risk_treatments')
+    decision = models.CharField(max_length=10, choices=RiskTreatmentDecision.choices)
+    rationale = models.TextField(blank=True)
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name='risk_treatments')
+
+    class Meta:
+        unique_together = [['threat_scenario', 'damage_scenario']]
+        ordering = ['threat_scenario', 'damage_scenario']
+
+    def __str__(self):
+        return f"{self.threat_scenario} / {self.damage_scenario}: {self.decision}"
+
+
+class ControlGroup(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name='control_groups')
+    controls = models.ManyToManyField(
+        'Control', blank=True, related_name='control_groups')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
+
+class CybersecurityGoal(models.Model):
+    CAL_CHOICES = [(1, 'CAL 1'), (2, 'CAL 2'), (3, 'CAL 3'), (4, 'CAL 4')]
+
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    cal = models.PositiveSmallIntegerField(choices=CAL_CHOICES, null=True, blank=True)
+    damage_scenarios = models.ManyToManyField(
+        DamageScenario, blank=True, related_name='cybersecurity_goals')
+    controls = models.ManyToManyField(
+        'Control', blank=True, related_name='cybersecurity_goals')
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name='cybersecurity_goals')
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
 
 
 class Comporomises(models.Model):

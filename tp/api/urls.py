@@ -20,6 +20,7 @@ urlpatterns = [
     path("damage_scenario/", views.damageScenarioNoid.as_view(), name="Get all damage scenarios"),
     path("damage_scenario/component/<int:pk>/", views.damageScenarioComponentId.as_view(), name="Damage scenario by component"),
     path("damage_scenario/<int:pk>/", views.damageScenarioId.as_view(), name="Damage scenario detail"),
+    path("control_class/", views.ControlClassListView.as_view(), name="Control classes"),
     path("control/", views.controlNoid.as_view(), name="Get all controls"),
     path("control/component/<int:pk>/", views.controlComponentId.as_view(), name="Controls by component"),
     path("control/<int:pk>/", views.controlId.as_view(), name="Controls detail"),
@@ -29,4 +30,9 @@ urlpatterns = [
     path("threat_scenario/", views.threatScenarioNoid.as_view(), name="Get all threat scenarios"),
     path("threat_scenario/component/<int:pk>/", views.threatScenarioComponentId.as_view(), name="Threat scenarios by component"),
     path("threat_scenario/<int:pk>/", views.threatScenarioId.as_view(), name="Threat scenario detail"),
+    path("control_group/", views.controlGroupNoid.as_view(), name="Get all control groups"),
+    path("control_group/<int:pk>/", views.controlGroupId.as_view(), name="Control group detail"),
+    path("risk_treatment/", views.riskTreatmentView.as_view(), name="Risk treatment"),
+    path("cybersecurity_goal/", views.cybersecurityGoalNoid.as_view(), name="Cybersecurity goals"),
+    path("cybersecurity_goal/<int:pk>/", views.cybersecurityGoalId.as_view(), name="Cybersecurity goal detail"),
 ]

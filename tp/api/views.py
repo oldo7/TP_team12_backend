@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -260,6 +261,16 @@ def create_damage_scenario_for_attack_step(attack_step, project):
 
     return damage_scenario
 
+class ControlClassListView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        classes = ControlClass.objects.all()
+        serializer = ControlClassSerializer(classes, many=True)
+        return Response(serializer.data)
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     
@@ -334,12 +345,18 @@ class riskNoid(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
 
+        treatments = {
+            (t.threat_scenario_id, t.damage_scenario_id): t
+            for t in RiskTreatment.objects.filter(project=project)
+        }
+
         rows = []
         threat_scenarios = (
             ThreatScenario.objects
             .filter(project=project)
             .prefetch_related(
                 'attack_steps',
+                'attack_steps__previous_steps',
                 'damage_scenarios',
                 'damage_scenarios__concerns',
                 'damage_scenarios__concerns__component',
@@ -356,6 +373,19 @@ class riskNoid(APIView):
                 )
                 concerns = list(damage_scenario.concerns.all())
 
+                sfop = {
+                    'safety_impact': damage_scenario.safety_impact,
+                    'finantial_impact': damage_scenario.finantial_impact,
+                    'operational_impact': damage_scenario.operational_impact,
+                    'privacy_impact': damage_scenario.privacy_impact,
+                }
+
+                treatment = treatments.get((threat_scenario.id, damage_scenario.id))
+                treatment_data = {
+                    'treatment_decision': treatment.decision if treatment else None,
+                    'treatment_rationale': treatment.rationale if treatment else '',
+                }
+
                 if not concerns and damage_scenario.affected_CIA_parts:
                     rows.append({
                         'id': f'ts-{threat_scenario.id}-ds-{damage_scenario.id}-legacy',
@@ -371,6 +401,8 @@ class riskNoid(APIView):
                         'il': impact_level,
                         'il_label': impact_level_label(impact_level),
                         'rl': risk_level,
+                        **sfop,
+                        **treatment_data,
                         **attack_feasibility,
                     })
                     continue
@@ -390,6 +422,8 @@ class riskNoid(APIView):
                         'il': impact_level,
                         'il_label': impact_level_label(impact_level),
                         'rl': risk_level,
+                        **sfop,
+                        **treatment_data,
                         **attack_feasibility,
                     })
 
@@ -791,7 +825,10 @@ class controlComponentId(APIView):
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
         
-        controls = Control.objects.filter(component_id=pk, project=project)
+        controls = Control.objects.filter(
+            Q(component_id=pk) | Q(attack_steps__component_id=pk),
+            project=project,
+        ).distinct()
         serializer = ControlSerializer(controls, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -1166,11 +1203,259 @@ class threatScenarioId(APIView):
         project_id = request.data.get('project_id') or request.query_params.get('project_id')
         if not project_id:
             return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         project = check_project_access(request.user, project_id)
         if not project:
             return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
-        
+
         threat_scenario = get_object_or_404(ThreatScenario, id=pk, project=project)
         threat_scenario.delete()
         return Response({'message': 'Threat scenario deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+# CONTROL GROUP ENDPOINTS
+class controlGroupNoid(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        groups = ControlGroup.objects.filter(project=project).prefetch_related('controls')
+        serializer = ControlGroupDetailSerializer(groups, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = ControlGroupSerializer(data=request.data)
+        if serializer.is_valid():
+            group = serializer.save(project=project)
+            if 'controls' in request.data:
+                controls = Control.objects.filter(id__in=request.data['controls'], project=project)
+                group.controls.set(controls)
+            return Response(ControlGroupDetailSerializer(group).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class controlGroupId(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, format=None):
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        group = get_object_or_404(ControlGroup, id=pk, project=project)
+        serializer = ControlGroupDetailSerializer(group)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, pk, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        group = get_object_or_404(ControlGroup, id=pk, project=project)
+        serializer = ControlGroupSerializer(group, data=request.data)
+        if serializer.is_valid():
+            group = serializer.save()
+            controls = Control.objects.filter(id__in=request.data.get('controls', []), project=project)
+            group.controls.set(controls)
+            return Response(ControlGroupDetailSerializer(group).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        group = get_object_or_404(ControlGroup, id=pk, project=project)
+        serializer = ControlGroupSerializer(group, data=request.data, partial=True)
+        if serializer.is_valid():
+            group = serializer.save()
+            if 'controls' in request.data:
+                controls = Control.objects.filter(id__in=request.data['controls'], project=project)
+                group.controls.set(controls)
+            return Response(ControlGroupDetailSerializer(group).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk, format=None):
+        project_id = request.data.get('project_id') or request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        group = get_object_or_404(ControlGroup, id=pk, project=project)
+        group.delete()
+        return Response({'message': 'Control group deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class cybersecurityGoalNoid(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        goals = CybersecurityGoal.objects.filter(project=project).prefetch_related('damage_scenarios', 'controls')
+        return Response(CybersecurityGoalDetailSerializer(goals, many=True).data)
+
+    def post(self, request, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = CybersecurityGoalSerializer(data=request.data)
+        if serializer.is_valid():
+            goal = serializer.save()
+            return Response(CybersecurityGoalDetailSerializer(goal).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class cybersecurityGoalId(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, format=None):
+        project_id = request.query_params.get('project_id')
+        project = check_project_access(request.user, project_id) if project_id else None
+        goal = get_object_or_404(CybersecurityGoal, id=pk)
+        if project and goal.project != project:
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+        return Response(CybersecurityGoalDetailSerializer(goal).data)
+
+    def put(self, request, pk, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        goal = get_object_or_404(CybersecurityGoal, id=pk, project=project)
+        serializer = CybersecurityGoalSerializer(goal, data=request.data)
+        if serializer.is_valid():
+            goal = serializer.save()
+            if 'damage_scenarios' in request.data:
+                goal.damage_scenarios.set(
+                    DamageScenario.objects.filter(id__in=request.data['damage_scenarios'], project=project))
+            if 'controls' in request.data:
+                goal.controls.set(
+                    Control.objects.filter(id__in=request.data['controls'], project=project))
+            return Response(CybersecurityGoalDetailSerializer(goal).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, pk, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        goal = get_object_or_404(CybersecurityGoal, id=pk, project=project)
+        serializer = CybersecurityGoalSerializer(goal, data=request.data, partial=True)
+        if serializer.is_valid():
+            goal = serializer.save()
+            if 'damage_scenarios' in request.data:
+                goal.damage_scenarios.set(
+                    DamageScenario.objects.filter(id__in=request.data['damage_scenarios'], project=project))
+            if 'controls' in request.data:
+                goal.controls.set(
+                    Control.objects.filter(id__in=request.data['controls'], project=project))
+            return Response(CybersecurityGoalDetailSerializer(goal).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk, format=None):
+        project_id = request.data.get('project_id') or request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        goal = get_object_or_404(CybersecurityGoal, id=pk, project=project)
+        goal.delete()
+        return Response({'message': 'Cybersecurity goal deleted'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class riskTreatmentView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, format=None):
+        project_id = request.data.get('project_id') or request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        ts_id = request.data.get('threat_scenario')
+        ds_id = request.data.get('damage_scenario')
+        decision = request.data.get('decision') or ''
+        rationale = request.data.get('rationale', '')
+
+        if not ts_id or not ds_id:
+            return Response(
+                {'error': 'threat_scenario and damage_scenario are required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            ts = ThreatScenario.objects.get(id=ts_id, project=project)
+            ds = DamageScenario.objects.get(id=ds_id, project=project)
+        except (ThreatScenario.DoesNotExist, DamageScenario.DoesNotExist):
+            return Response(
+                {'error': 'Invalid threat_scenario or damage_scenario'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not decision:
+            RiskTreatment.objects.filter(threat_scenario=ts, damage_scenario=ds).delete()
+            return Response({'message': 'Treatment cleared'}, status=status.HTTP_200_OK)
+
+        if decision not in RiskTreatmentDecision.values:
+            return Response(
+                {'error': f'Invalid decision. Must be one of: {list(RiskTreatmentDecision.values)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        treatment, _ = RiskTreatment.objects.update_or_create(
+            threat_scenario=ts,
+            damage_scenario=ds,
+            defaults={'decision': decision, 'rationale': rationale, 'project': project},
+        )
+        return Response(RiskTreatmentSerializer(treatment).data, status=status.HTTP_200_OK)
