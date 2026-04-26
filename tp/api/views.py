@@ -1318,6 +1318,29 @@ class controlGroupId(APIView):
         return Response({'message': 'Control group deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 
+class reportView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.http import HttpResponse
+        from .report import generate_report_pdf
+
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        pdf_bytes = generate_report_pdf(project)
+        response  = HttpResponse(pdf_bytes, content_type='application/pdf')
+        safe_name = project.name.replace(' ', '_')
+        response['Content-Disposition'] = f'attachment; filename="tara-{safe_name}.pdf"'
+        return response
+
+
 class cybersecurityGoalNoid(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]

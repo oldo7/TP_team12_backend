@@ -32,6 +32,7 @@ urlpatterns = [
     path("threat_scenario/<int:pk>/", views.threatScenarioId.as_view(), name="Threat scenario detail"),
     path("control_group/", views.controlGroupNoid.as_view(), name="Get all control groups"),
     path("control_group/<int:pk>/", views.controlGroupId.as_view(), name="Control group detail"),
+    path("report/", views.reportView.as_view(), name="Report"),
     path("risk_treatment/", views.riskTreatmentView.as_view(), name="Risk treatment"),
     path("cybersecurity_goal/", views.cybersecurityGoalNoid.as_view(), name="Cybersecurity goals"),
     path("cybersecurity_goal/<int:pk>/", views.cybersecurityGoalId.as_view(), name="Cybersecurity goal detail"),
