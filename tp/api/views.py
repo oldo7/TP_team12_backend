@@ -1341,6 +1341,65 @@ class reportView(APIView):
         return response
 
 
+class threatClassNoid(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        project_id = request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        threat_classes = ThreatClass.objects.filter(project=project)
+        serializer = ThreatClassSerializer(threat_classes, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ThreatClassSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(project=project)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class threatClassId(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk, format=None):
+        project_id = request.data.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        threat_class = get_object_or_404(ThreatClass, id=pk, project=project)
+        serializer = ThreatClassSerializer(threat_class, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk, format=None):
+        project_id = request.data.get('project_id') or request.query_params.get('project_id')
+        if not project_id:
+            return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        project = check_project_access(request.user, project_id)
+        if not project:
+            return Response({'error': 'Project not found or access denied'}, status=status.HTTP_403_FORBIDDEN)
+        threat_class = get_object_or_404(ThreatClass, id=pk, project=project)
+        threat_class.delete()
+        return Response({'message': 'Threat class deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
 class cybersecurityGoalNoid(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]

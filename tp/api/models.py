@@ -166,6 +166,8 @@ class Control(models.Model):
 class ThreatClass(models.Model):
     name = models.CharField(max_length=100)
     description = models.CharField(max_length=500)
+    mitre_tactic_id = models.CharField(max_length=20, blank=True)
+    mitre_tactic_name = models.CharField(max_length=200, blank=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE,
                                 related_name='threat_classes', null=True, blank=True)
 
@@ -192,6 +194,8 @@ class AttackStep(models.Model):
     )
     threat_class = models.ForeignKey(
         ThreatClass, null=True, blank=True, on_delete=models.SET_NULL)
+    mitre_technique_id = models.CharField(max_length=20, blank=True)
+    mitre_technique_name = models.CharField(max_length=200, blank=True)
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name='attack_steps', null=True, blank=True)
 

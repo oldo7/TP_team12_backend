@@ -391,7 +391,7 @@ class ThreatClassSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ThreatClass
-        fields = ["id", "name", "description", "project", "project_id"]
+        fields = ["id", "name", "description", "mitre_tactic_id", "mitre_tactic_name", "project", "project_id"]
         extra_kwargs = {
             'name': {'max_length': 100},
             'description': {'max_length': 500},
@@ -440,6 +440,7 @@ class AttackStepSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "required_access", "fr_et", "fr_se", "fr_koC", "fr_WoO", "fr_eq",
             "component", "previous_steps", "threat_class", "threat_scenarios", "controls",
+            "mitre_technique_id", "mitre_technique_name",
             "attack_potential_points", "attack_potential", "afl", "afl_value",
             "project", "project_id"
         ]

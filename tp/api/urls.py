@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .mitre import MitreTacticsView, MitreTechniquesView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
@@ -36,4 +37,8 @@ urlpatterns = [
     path("risk_treatment/", views.riskTreatmentView.as_view(), name="Risk treatment"),
     path("cybersecurity_goal/", views.cybersecurityGoalNoid.as_view(), name="Cybersecurity goals"),
     path("cybersecurity_goal/<int:pk>/", views.cybersecurityGoalId.as_view(), name="Cybersecurity goal detail"),
+    path("threat_class/", views.threatClassNoid.as_view(), name="Threat classes"),
+    path("threat_class/<int:pk>/", views.threatClassId.as_view(), name="Threat class detail"),
+    path("mitre/tactics/", MitreTacticsView.as_view(), name="MITRE tactics"),
+    path("mitre/techniques/", MitreTechniquesView.as_view(), name="MITRE techniques"),
 ]
