@@ -299,6 +299,7 @@ class LangchainsPrepareView(APIView):
         project_id = request.data.get('project_id')
         prompt = str(request.data.get('prompt', '')).strip()
         messages = request.data.get('messages', [])
+        proposal_memory = request.data.get('proposal_memory', [])
 
         if not project_id:
             return Response({'error': 'project_id required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -312,7 +313,7 @@ class LangchainsPrepareView(APIView):
 
         try:
             return Response(
-                prepare_langchain_response(project, prompt, messages),
+                prepare_langchain_response(project, prompt, messages, proposal_memory),
                 status=status.HTTP_200_OK,
             )
         except AssistantConfigurationError as exc:

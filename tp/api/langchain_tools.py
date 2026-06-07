@@ -15,6 +15,10 @@ class ProposalArgs(BaseModel):
     temp_id: str = Field(description='Stable kebab-case local proposal ID.')
     title: str = Field(description='Short UI title.')
     description: str = Field(default='', description='Short UI summary.')
+    rationale: str = Field(
+        default='',
+        description='Concise user-facing reason this proposal should be included.',
+    )
     references: list[ProposalReference] | None = Field(
         default=None,
         description='Deferred relationships to proposals that may not exist in the database yet.',
@@ -97,6 +101,7 @@ def _proposal(
     proposal_type: str,
     title: str,
     description: str,
+    rationale: str,
     payload: dict[str, Any],
     references: list[ProposalReference] | None,
 ) -> dict[str, Any]:
@@ -105,6 +110,7 @@ def _proposal(
         'type': proposal_type,
         'title': title,
         'description': description,
+        'rationale': rationale,
         'payload': payload,
         'references': _references(references),
         'status': 'pending',
@@ -117,6 +123,7 @@ def propose_technology(
     title: str,
     description: str,
     name: str,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare a technology proposal for the current project."""
@@ -125,6 +132,7 @@ def propose_technology(
         proposal_type='technology',
         title=title,
         description=description,
+        rationale=rationale,
         payload={
             'name': name,
             'description': description,
@@ -141,6 +149,7 @@ def propose_component(
     name: str,
     communicates_with: list[int] | None = None,
     technology: list[int] | None = None,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare a component proposal. Use references for not-yet-created related proposals."""
@@ -149,6 +158,7 @@ def propose_component(
         proposal_type='component',
         title=title,
         description=description,
+        rationale=rationale,
         payload={
             'name': name,
             'description': description,
@@ -170,6 +180,7 @@ def propose_damage_scenario(
     finantial_impact: int,
     operational_impact: int,
     privacy_impact: int,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare a damage scenario proposal using CIA and impact integer ratings."""
@@ -187,6 +198,7 @@ def propose_damage_scenario(
         proposal_type='damageScenario',
         title=title,
         description=description,
+        rationale=rationale,
         payload=payload,
         references=references,
     )
@@ -207,6 +219,7 @@ def propose_attack_step(
     component: int | None = None,
     previous_steps: list[int] | None = None,
     controls: list[int] | None = None,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare an attack step proposal using ISO/SAE attack-potential factor scores."""
@@ -229,6 +242,7 @@ def propose_attack_step(
         proposal_type='attackStep',
         title=title,
         description=description,
+        rationale=rationale,
         payload=payload,
         references=references,
     )
@@ -245,6 +259,7 @@ def propose_threat_scenario(
     attack_steps: list[int] | None = None,
     damage_scenarios: list[int] | None = None,
     compromises: list[CompromiseReference] | None = None,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare a threat scenario proposal linking attack steps, damage scenarios, and compromises."""
@@ -253,6 +268,7 @@ def propose_threat_scenario(
         proposal_type='threatScenario',
         title=title,
         description=description,
+        rationale=rationale,
         payload={
             'name': name,
             'description': description,
@@ -281,6 +297,7 @@ def propose_control(
     fr_eq: int,
     component: int | None = None,
     attack_steps: list[int] | None = None,
+    rationale: str = '',
     references: list[ProposalReference] | None = None,
 ) -> dict[str, Any]:
     """Prepare a control proposal using ISO/SAE attack-potential factor scores."""
@@ -301,6 +318,7 @@ def propose_control(
         proposal_type='control',
         title=title,
         description=description,
+        rationale=rationale,
         payload=payload,
         references=references,
     )

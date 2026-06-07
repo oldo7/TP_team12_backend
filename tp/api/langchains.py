@@ -29,29 +29,211 @@ VALID_PROPOSAL_TYPES = {
     'control',
 }
 
+PROPOSAL_TYPE_LABELS = {
+    'technology': 'Technology',
+    'component': 'Component',
+    'damageScenario': 'Damage scenario',
+    'attackStep': 'Attack step',
+    'threatScenario': 'Threat scenario',
+    'control': 'Control',
+}
+
+
+def _ids(queryset):
+    return list(queryset.values_list('id', flat=True))
+
+
+def _component_coverage(component):
+    missing = []
+    if not component.mapped_damage_scenarios.exists():
+        missing.append('damageScenarios')
+    if not component.attack_steps.exists():
+        missing.append('attackSteps')
+    if not component.controls.exists():
+        missing.append('controls')
+
+    return {
+        'component_id': component.id,
+        'component_name': component.name,
+        'technology_ids': _ids(component.technology.all()),
+        'communicates_with_ids': _ids(component.communicates_with.all()),
+        'attack_step_ids': _ids(component.attack_steps.all()),
+        'threat_scenario_ids': _ids(component.threat_scenarios.all()),
+        'damage_scenario_ids': _ids(component.mapped_damage_scenarios),
+        'control_ids': _ids(component.controls.all()),
+        'missing': missing,
+    }
+
+
+def _named_ids(queryset):
+    return [
+        {
+            'id': item.id,
+            'name': item.name,
+        }
+        for item in queryset
+    ]
+
+
+def _damage_scenario_components(scenario):
+    components_by_id = {}
+    for threat_scenario in scenario.threat_scenarios.all():
+        for component in threat_scenario.components.all():
+            components_by_id[component.id] = component
+
+    return [
+        {
+            'id': component.id,
+            'name': component.name,
+        }
+        for component in components_by_id.values()
+    ]
+
+
+def _entity_overview(
+    *,
+    components,
+    technologies,
+    damage_scenarios,
+    attack_steps,
+    threat_scenarios,
+    controls,
+):
+    return {
+        'counts': {
+            'technologies': len(technologies),
+            'components': len(components),
+            'damageScenarios': len(damage_scenarios),
+            'attackSteps': len(attack_steps),
+            'threatScenarios': len(threat_scenarios),
+            'controls': len(controls),
+        },
+        'components': [
+            {
+                'id': component.id,
+                'name': component.name,
+                'usesTechnologies': _named_ids(component.technology.all()),
+                'communicatesWith': _named_ids(component.communicates_with.all()),
+                'attackSteps': _named_ids(component.attack_steps.all()),
+                'threatScenarios': _named_ids(component.threat_scenarios.all()),
+                'damageScenarios': _named_ids(component.mapped_damage_scenarios),
+                'controls': _named_ids(component.controls.all()),
+                'missing': _component_coverage(component)['missing'],
+            }
+            for component in components
+        ],
+        'technologies': [
+            {
+                'id': technology.id,
+                'name': technology.name,
+                'components': _named_ids(technology.component_set.all()),
+            }
+            for technology in technologies
+        ],
+        'attackSteps': [
+            {
+                'id': step.id,
+                'name': step.name,
+                'component': (
+                    {'id': step.component_id, 'name': step.component.name}
+                    if step.component_id and step.component
+                    else None
+                ),
+                'previousSteps': _named_ids(step.previous_steps.all()),
+                'nextSteps': _named_ids(step.next_steps.all()),
+                'threatScenarios': _named_ids(step.threat_scenarios.all()),
+                'damageScenarios': _named_ids(step.mapped_damage_scenarios),
+                'controls': _named_ids(step.controls.all()),
+            }
+            for step in attack_steps
+        ],
+        'damageScenarios': [
+            {
+                'id': scenario.id,
+                'name': scenario.name,
+                'components': _damage_scenario_components(scenario),
+                'attackSteps': _named_ids(scenario.mapped_attack_steps),
+                'threatScenarios': _named_ids(scenario.threat_scenarios.all()),
+            }
+            for scenario in damage_scenarios
+        ],
+        'threatScenarios': [
+            {
+                'id': scenario.id,
+                'name': scenario.name,
+                'components': _named_ids(scenario.components.all()),
+                'attackSteps': _named_ids(scenario.attack_steps.all()),
+                'damageScenarios': _named_ids(scenario.damage_scenarios.all()),
+                'controls': _named_ids(scenario.controls.all()),
+                'isCompletePath': (
+                    scenario.components.exists()
+                    and scenario.attack_steps.exists()
+                    and scenario.damage_scenarios.exists()
+                ),
+            }
+            for scenario in threat_scenarios
+        ],
+        'controls': [
+            {
+                'id': control.id,
+                'name': control.name,
+                'component': (
+                    {'id': control.component_id, 'name': control.component.name}
+                    if control.component_id and control.component
+                    else None
+                ),
+                'attackSteps': _named_ids(control.attack_steps.all()),
+                'threatScenarios': _named_ids(control.threat_scenarios.all()),
+            }
+            for control in controls
+        ],
+    }
+
 
 def _project_context(project):
+    components = list(project.components.all().order_by('name'))
+    technologies = list(project.technologies.all().order_by('name'))
+    damage_scenarios = list(project.damage_scenarios.all().order_by('name'))
+    attack_steps = list(project.attack_steps.all().order_by('name'))
+    threat_scenarios = list(project.threat_scenarios.all().order_by('name'))
+    controls = list(project.controls.all().order_by('name'))
+
     return {
         'project': {
             'id': project.id,
             'name': project.name,
             'description': project.description,
         },
+        'entityOverview': _entity_overview(
+            components=components,
+            technologies=technologies,
+            damage_scenarios=damage_scenarios,
+            attack_steps=attack_steps,
+            threat_scenarios=threat_scenarios,
+            controls=controls,
+        ),
         'components': [
             {
                 'id': component.id,
                 'name': component.name,
                 'description': component.description,
+                'technology_ids': _ids(component.technology.all()),
+                'communicates_with_ids': _ids(component.communicates_with.all()),
+                'attack_step_ids': _ids(component.attack_steps.all()),
+                'threat_scenario_ids': _ids(component.threat_scenarios.all()),
+                'damage_scenario_ids': _ids(component.mapped_damage_scenarios),
+                'control_ids': _ids(component.controls.all()),
             }
-            for component in project.components.all().order_by('name')
+            for component in components
         ],
         'technologies': [
             {
                 'id': technology.id,
                 'name': technology.name,
                 'description': technology.description,
+                'component_ids': _ids(technology.component_set.filter(project=project)),
             }
-            for technology in project.technologies.all().order_by('name')
+            for technology in technologies
         ],
         'damageScenarios': [
             {
@@ -63,6 +245,11 @@ def _project_context(project):
                 'finantial_impact': scenario.finantial_impact,
                 'operational_impact': scenario.operational_impact,
                 'privacy_impact': scenario.privacy_impact,
+                'threat_scenario_ids': _ids(scenario.threat_scenarios.all()),
+                'attack_step_ids': _ids(scenario.mapped_attack_steps),
+                'component_ids': _ids(
+                    project.components.filter(threat_scenarios__damage_scenarios=scenario).distinct()
+                ),
                 'concerns': [
                     {
                         'component_id': concern.component_id,
@@ -71,7 +258,7 @@ def _project_context(project):
                     for concern in scenario.concerns.all()
                 ],
             }
-            for scenario in project.damage_scenarios.prefetch_related('concerns').all().order_by('name')
+            for scenario in damage_scenarios
         ],
         'attackSteps': [
             {
@@ -80,8 +267,18 @@ def _project_context(project):
                 'description': step.description,
                 'component_id': step.component_id,
                 'required_access': step.required_access,
+                'fr_et': step.fr_et,
+                'fr_se': step.fr_se,
+                'fr_koC': step.fr_koC,
+                'fr_WoO': step.fr_WoO,
+                'fr_eq': step.fr_eq,
+                'previous_step_ids': _ids(step.previous_steps.all()),
+                'next_step_ids': _ids(step.next_steps.all()),
+                'control_ids': _ids(step.controls.all()),
+                'threat_scenario_ids': _ids(step.threat_scenarios.all()),
+                'damage_scenario_ids': _ids(step.mapped_damage_scenarios),
             }
-            for step in project.attack_steps.all().order_by('name')
+            for step in attack_steps
         ],
         'threatScenarios': [
             {
@@ -91,8 +288,9 @@ def _project_context(project):
                 'component_ids': list(scenario.components.values_list('id', flat=True)),
                 'attack_step_ids': list(scenario.attack_steps.values_list('id', flat=True)),
                 'damage_scenario_ids': list(scenario.damage_scenarios.values_list('id', flat=True)),
+                'control_ids': _ids(scenario.controls.all()),
             }
-            for scenario in project.threat_scenarios.all().order_by('name')
+            for scenario in threat_scenarios
         ],
         'controls': [
             {
@@ -100,10 +298,48 @@ def _project_context(project):
                 'name': control.name,
                 'description': control.description,
                 'component_id': control.component_id,
+                'fr_et': control.fr_et,
+                'fr_se': control.fr_se,
+                'fr_koC': control.fr_koC,
+                'fr_WoO': control.fr_WoO,
+                'fr_eq': control.fr_eq,
                 'attack_step_ids': list(control.attack_steps.values_list('id', flat=True)),
+                'threat_scenario_ids': _ids(control.threat_scenarios.all()),
             }
-            for control in project.controls.all().order_by('name')
+            for control in controls
         ],
+        'relationshipMap': {
+            'componentCoverage': [_component_coverage(component) for component in components],
+            'threatScenarioLinks': [
+                {
+                    'threat_scenario_id': scenario.id,
+                    'threat_scenario_name': scenario.name,
+                    'component_ids': _ids(scenario.components.all()),
+                    'attack_step_ids': _ids(scenario.attack_steps.all()),
+                    'damage_scenario_ids': _ids(scenario.damage_scenarios.all()),
+                    'control_ids': _ids(scenario.controls.all()),
+                    'is_complete_path': (
+                        scenario.components.exists()
+                        and scenario.attack_steps.exists()
+                        and scenario.damage_scenarios.exists()
+                    ),
+                }
+                for scenario in threat_scenarios
+            ],
+            'attackStepLinks': [
+                {
+                    'attack_step_id': step.id,
+                    'attack_step_name': step.name,
+                    'component_id': step.component_id,
+                    'previous_step_ids': _ids(step.previous_steps.all()),
+                    'next_step_ids': _ids(step.next_steps.all()),
+                    'threat_scenario_ids': _ids(step.threat_scenarios.all()),
+                    'damage_scenario_ids': _ids(step.mapped_damage_scenarios),
+                    'control_ids': _ids(step.controls.all()),
+                }
+                for step in attack_steps
+            ],
+        },
     }
 
 
@@ -111,9 +347,25 @@ def _system_prompt():
     return '''
 You are a conversational cybersecurity TARA assistant for an existing web app.
 Answer normal questions directly in concise plain text.
-When the user asks to inspect, review, audit, summarize, or analyze the current model, call analyze_current_state.
-When the user asks to prepare, draft, create, suggest, or add TARA model objects, call the proposal tools for every object.
-Do not claim that proposals were saved; tools only prepare reviewable drafts.
+Use the prompt, conversation history, context, currentAnalysis, and proposalMemory to decide whether to answer directly, call analyze_current_state, or call proposal tools.
+When the user asks to analyze, inspect, review, summarize, or understand the current model, call analyze_current_state.
+When the user asks to create, implement, draft, generate, add, continue, or propose TARA model objects, call proposal tools for every object needed to address the request and relevant currentAnalysis gaps.
+Treat follow-ups like "implement these", "create those", "go on", or "do it" after an analysis as proposal requests.
+Do not narrate multi-step plans when calling tools. Do not claim that proposals were saved; tools only prepare reviewable drafts.
+Every proposal tool call must include a concise user-facing rationale explaining why the proposal belongs in the model. Do not include private chain-of-thought.
+Before proposing, inspect proposalMemory. Avoid duplicating pending, accepted, rejected, or failed proposals unless the user explicitly asks to revise them.
+Treat accepted proposalMemory items with createdId as already implemented. When the user says "go on" or similar, propose the remaining useful gaps not already covered by proposalMemory.
+Treat rejected proposalMemory items as not desired unless the user asks for alternatives.
+Before proposing new objects, carefully map the user's request and currentAnalysis gaps against context.entityOverview first, then context.components, context.technologies, context.damageScenarios, context.attackSteps, context.threatScenarios, context.controls, and context.relationshipMap for exact IDs.
+Prefer joining to existing objects over proposing duplicates. If an existing entity represents the same concept or endpoint, reuse its database ID in the proposal payload.
+When creating a new attack step for an existing component, set payload.component to that component ID.
+When asked for attack steps for a component, also ensure the proposed attack steps are connected into a usable path: reuse or propose a threat scenario, reuse or propose relevant damage scenarios, and link them through payload.attack_steps and payload.damage_scenarios.
+If a relevant threat scenario or damage scenario already exists, reuse its existing ID in the new proposal payload instead of creating a duplicate. If neither exists, propose the missing damage scenario and threat scenario in the same response.
+When creating a threat scenario, include all relevant existing component IDs, attack step IDs, and damage scenario IDs in payload.components, payload.attack_steps, and payload.damage_scenarios.
+When creating a control for an existing component or attack step, set payload.component and payload.attack_steps to the matching existing IDs.
+When creating a component that uses existing technologies, put those technology IDs in payload.technology.
+Use references only for objects proposed in the same response. Use real IDs for existing objects already present in context.
+Each rationale should mention whether the proposal fills a missing relationship, links to existing IDs, or creates a genuinely missing entity.
 
 Use these API payload rules:
 - technology: name, description.
@@ -155,7 +407,61 @@ def _normalize_history(history):
     return normalized
 
 
-def _messages(project, prompt, history=None):
+def _safe_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _safe_dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_proposal_memory(proposal_memory):
+    if not isinstance(proposal_memory, list):
+        return []
+
+    normalized = []
+    allowed_statuses = {'pending', 'accepted', 'rejected', 'failed', 'saving'}
+
+    for item in proposal_memory[-60:]:
+        if not isinstance(item, dict):
+            continue
+
+        proposal_type = str(item.get('type', '')).strip()
+        status = str(item.get('status', '')).strip()
+        temp_id = str(item.get('tempId', '')).strip()
+        title = str(item.get('title', '')).strip()
+
+        if proposal_type not in VALID_PROPOSAL_TYPES or status not in allowed_statuses:
+            continue
+
+        if not temp_id or not title:
+            continue
+
+        memory_item = {
+            'tempId': temp_id,
+            'type': proposal_type,
+            'title': title,
+            'description': str(item.get('description', '')).strip(),
+            'rationale': str(item.get('rationale', '')).strip(),
+            'status': status,
+            'payload': _safe_dict(item.get('payload')),
+            'references': _safe_list(item.get('references')),
+        }
+
+        created_id = item.get('createdId')
+        if isinstance(created_id, int):
+            memory_item['createdId'] = created_id
+
+        error = str(item.get('error', '')).strip()
+        if error:
+            memory_item['error'] = error
+
+        normalized.append(memory_item)
+
+    return normalized
+
+
+def _messages(project, prompt, history=None, proposal_memory=None):
     return [
         ('system', _system_prompt()),
         *_normalize_history(history),
@@ -165,6 +471,8 @@ def _messages(project, prompt, history=None):
                 {
                     'prompt': prompt,
                     'context': _project_context(project),
+                    'currentAnalysis': _build_state_analysis(project, {}),
+                    'proposalMemory': _normalize_proposal_memory(proposal_memory),
                 },
                 ensure_ascii=False,
             ),
@@ -200,6 +508,7 @@ def _normalize_proposal(proposal):
     proposal_type = str(proposal.get('type', '')).strip()
     title = str(proposal.get('title', '')).strip()
     description = str(proposal.get('description', '')).strip()
+    rationale = str(proposal.get('rationale', '')).strip()
     payload = proposal.get('payload')
     references = proposal.get('references', [])
 
@@ -223,6 +532,7 @@ def _normalize_proposal(proposal):
         'type': proposal_type,
         'title': title,
         'description': description,
+        'rationale': rationale,
         'payload': payload,
         'references': [_normalize_reference(reference) for reference in references],
         'status': 'pending',
@@ -383,7 +693,7 @@ def _normalize_tool_calls(project, response):
     return proposals, analyses
 
 
-def _call_assistant(project, prompt, history=None):
+def _call_assistant(project, prompt, history=None, proposal_memory=None):
     if not settings.ASSISTANT_API:
         raise AssistantConfigurationError('ASSISTANT_API is not configured.')
 
@@ -400,7 +710,9 @@ def _call_assistant(project, prompt, history=None):
     chat_model_with_tools = chat_model.bind_tools(ASSISTANT_TOOLS, tool_choice='auto')
 
     try:
-        response = chat_model_with_tools.invoke(_messages(project, prompt, history))
+        response = chat_model_with_tools.invoke(
+            _messages(project, prompt, history, proposal_memory)
+        )
     except Exception as exc:
         raise AssistantProviderError(f'Assistant API request failed: {exc}') from exc
 
@@ -408,18 +720,52 @@ def _call_assistant(project, prompt, history=None):
 
 
 def _fallback_message(proposals, analyses):
-    parts = []
     if analyses:
-        parts.append('I analyzed the current model state.')
+        return 'I analyzed the current model state.'
+
     if proposals:
-        parts.append(f"I prepared {len(proposals)} proposal{'s' if len(proposals) != 1 else ''} for review.")
-    return ' '.join(parts)
+        return _proposal_summary(proposals)
+
+    return ''
 
 
-def prepare_langchain_response(project, prompt, history=None):
-    response = _call_assistant(project, prompt, history)
+def _proposal_title(proposal):
+    title = str(proposal.get('title') or proposal.get('payload', {}).get('name') or '').strip()
+    return title or str(proposal.get('tempId', 'Untitled proposal')).strip()
+
+
+def _proposal_reason(proposal):
+    rationale = str(proposal.get('rationale', '')).strip()
+    if rationale:
+        return rationale
+
+    description = str(proposal.get('description', '')).strip()
+    if description:
+        return description
+
+    return 'The assistant marked this as useful for the requested model changes.'
+
+
+def _proposal_summary(proposals):
+    proposal_word = 'proposal' if len(proposals) == 1 else 'proposals'
+    lines = [
+        f"I prepared {len(proposals)} {proposal_word} for review:",
+        '',
+    ]
+
+    for proposal in proposals:
+        proposal_type = PROPOSAL_TYPE_LABELS.get(proposal['type'], proposal['type'])
+        lines.append(
+            f"- {proposal_type}: {_proposal_title(proposal)} - {_proposal_reason(proposal)}"
+        )
+
+    return '\n'.join(lines)
+
+
+def prepare_langchain_response(project, prompt, history=None, proposal_memory=None):
+    response = _call_assistant(project, prompt, history, proposal_memory)
     proposals, analyses = _normalize_tool_calls(project, response)
-    message = _assistant_content(response) or _fallback_message(proposals, analyses)
+    message = _fallback_message(proposals, analyses) or _assistant_content(response)
 
     if not message and not proposals and not analyses:
         raise AssistantProviderError('Assistant response did not include text or tool calls.')

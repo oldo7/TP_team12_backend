@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -17,6 +18,7 @@ from .models import (
     KnowledgeScore,
     Project,
     SpecialistExpertiseScore,
+    Technology,
     ThreatScenario,
     WindowOfOpportunityScore,
 )
@@ -435,6 +437,7 @@ class LangchainsPrepareTests(APITestCase):
     @patch('api.langchains.ChatDeepSeek')
     def test_prepare_returns_assistant_tool_proposals(self, chat_deepseek):
         chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            'Great, let me propose everything.\n\nStep 1: Propose missing technologies',
             tool_calls=[
                 {
                     'name': 'propose_component',
@@ -442,6 +445,7 @@ class LangchainsPrepareTests(APITestCase):
                         'temp_id': 'component-gateway',
                         'title': 'Gateway ECU',
                         'description': 'Gateway component',
+                        'rationale': 'The gateway is the central routing asset in the CAN model.',
                         'name': 'Gateway ECU',
                         'communicates_with': [],
                         'technology': [],
@@ -471,12 +475,23 @@ class LangchainsPrepareTests(APITestCase):
         self.assertEqual(response.data['provider'], 'assistant')
         self.assertEqual(response.data['mode'], 'conversation')
         self.assertEqual(response.data['model'], 'assistant-test-model')
-        self.assertEqual(response.data['message'], 'I prepared 1 proposal for review.')
+        self.assertEqual(
+            response.data['message'],
+            (
+                'I prepared 1 proposal for review:\n\n'
+                '- Component: Gateway ECU - The gateway is the central routing asset in the CAN model.'
+            ),
+        )
+        self.assertNotIn('Step 1', response.data['message'])
         self.assertTrue(response.data['assistantApiConfigured'])
         self.assertTrue(response.data['apiUrlConfigured'])
         self.assertEqual(len(response.data['proposals']), 1)
         self.assertEqual(response.data['proposals'][0]['status'], 'pending')
         self.assertEqual(response.data['proposals'][0]['type'], 'component')
+        self.assertEqual(
+            response.data['proposals'][0]['rationale'],
+            'The gateway is the central routing asset in the CAN model.',
+        )
         self.assertEqual(
             response.data['proposals'][0]['references'],
             [
@@ -501,8 +516,184 @@ class LangchainsPrepareTests(APITestCase):
             chat_deepseek.return_value.bind_tools.call_args.kwargs,
             {'tool_choice': 'auto'},
         )
+        self.assertEqual(
+            [tool.name for tool in chat_deepseek.return_value.bind_tools.call_args.args[0]],
+            [
+                'propose_technology',
+                'propose_component',
+                'propose_damage_scenario',
+                'propose_attack_step',
+                'propose_threat_scenario',
+                'propose_control',
+                'analyze_current_state',
+            ],
+        )
         chat_deepseek.return_value.bind_tools.return_value.invoke.assert_called_once()
         self.assertNotIn('test-key', str(response.data))
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_passes_proposal_memory_to_assistant(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            'Continue with the remaining gaps.'
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'What should I do next?',
+                'proposal_memory': [
+                    {
+                        'tempId': 'component-gateway',
+                        'type': 'component',
+                        'title': 'Gateway ECU',
+                        'description': 'Gateway component',
+                        'rationale': 'The gateway is the central routing asset.',
+                        'status': 'accepted',
+                        'createdId': 42,
+                        'payload': {'name': 'Gateway ECU'},
+                        'extra': 'discard me',
+                    },
+                    {
+                        'tempId': 'bad',
+                        'type': 'unsupported',
+                        'title': 'Invalid',
+                        'status': 'accepted',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = chat_deepseek.return_value.bind_tools.return_value.invoke.call_args.args[0]
+        payload = json.loads(messages[-1][1])
+        self.assertEqual(
+            payload['proposalMemory'],
+            [
+                {
+                    'tempId': 'component-gateway',
+                    'type': 'component',
+                    'title': 'Gateway ECU',
+                    'description': 'Gateway component',
+                    'rationale': 'The gateway is the central routing asset.',
+                    'status': 'accepted',
+                    'payload': {'name': 'Gateway ECU'},
+                    'references': [],
+                    'createdId': 42,
+                }
+            ],
+        )
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_context_includes_existing_relationship_map(self, chat_deepseek):
+        technology = Technology.objects.create(
+            name='CAN',
+            description='Controller Area Network',
+            project=self.project,
+        )
+        component = Component.objects.create(
+            name='Gateway ECU',
+            description='Routes vehicle network traffic',
+            project=self.project,
+        )
+        component.technology.add(technology)
+        attack_step = AttackStep.objects.create(
+            name='Inject routed CAN frame',
+            fr_et=ElapsedTimeScore.LEQ_1_WEEK,
+            fr_se=SpecialistExpertiseScore.PROFICIENT,
+            fr_koC=KnowledgeScore.RESTRICTED,
+            fr_WoO=WindowOfOpportunityScore.EASY,
+            fr_eq=EquipmentScore.STANDARD,
+            component=component,
+            project=self.project,
+        )
+        damage_scenario = DamageScenario.objects.create(
+            name='Incorrect gateway routing',
+            affected_CIA_parts=CIABitmask.INTEGRITY,
+            impact_scale=ImpactRating.MAJOR,
+            safety_impact=ImpactRating.MAJOR,
+            finantial_impact=ImpactRating.MODERATE,
+            operational_impact=ImpactRating.MAJOR,
+            privacy_impact=ImpactRating.NEGLIGIBLE,
+            project=self.project,
+        )
+        threat_scenario = ThreatScenario.objects.create(
+            name='Spoofed in-vehicle messages',
+            project=self.project,
+        )
+        threat_scenario.components.add(component)
+        threat_scenario.attack_steps.add(attack_step)
+        threat_scenario.damage_scenarios.add(damage_scenario)
+
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            'The existing model already has a linked path.'
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'What is already linked?',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = chat_deepseek.return_value.bind_tools.return_value.invoke.call_args.args[0]
+        self.assertIn('When asked for attack steps for a component', messages[0][1])
+        payload = json.loads(messages[-1][1])
+        context = payload['context']
+
+        self.assertNotIn('requestIntent', payload)
+        self.assertEqual(context['components'][0]['technology_ids'], [technology.id])
+        self.assertEqual(context['components'][0]['attack_step_ids'], [attack_step.id])
+        self.assertEqual(context['components'][0]['damage_scenario_ids'], [damage_scenario.id])
+        self.assertEqual(context['technologies'][0]['component_ids'], [component.id])
+        self.assertEqual(context['attackSteps'][0]['threat_scenario_ids'], [threat_scenario.id])
+        self.assertEqual(context['damageScenarios'][0]['component_ids'], [component.id])
+        self.assertEqual(context['entityOverview']['counts']['components'], 1)
+        self.assertEqual(
+            context['entityOverview']['components'][0]['attackSteps'],
+            [{'id': attack_step.id, 'name': 'Inject routed CAN frame'}],
+        )
+        self.assertEqual(
+            context['entityOverview']['damageScenarios'][0]['threatScenarios'],
+            [{'id': threat_scenario.id, 'name': 'Spoofed in-vehicle messages'}],
+        )
+        self.assertEqual(
+            context['entityOverview']['threatScenarios'][0]['damageScenarios'],
+            [{'id': damage_scenario.id, 'name': 'Incorrect gateway routing'}],
+        )
+        self.assertEqual(
+            context['relationshipMap']['componentCoverage'],
+            [
+                {
+                    'component_id': component.id,
+                    'component_name': 'Gateway ECU',
+                    'technology_ids': [technology.id],
+                    'communicates_with_ids': [],
+                    'attack_step_ids': [attack_step.id],
+                    'threat_scenario_ids': [threat_scenario.id],
+                    'damage_scenario_ids': [damage_scenario.id],
+                    'control_ids': [],
+                    'missing': ['controls'],
+                }
+            ],
+        )
+        self.assertTrue(
+            context['relationshipMap']['threatScenarioLinks'][0]['is_complete_path']
+        )
 
     @override_settings(
         ASSISTANT_API='test-key',
@@ -610,6 +801,63 @@ class LangchainsPrepareTests(APITestCase):
         self.assertEqual(response.data['analysis']['counts']['components'], 1)
         self.assertEqual(response.data['analysis']['recommendations'][0], 'Focus requested: coverage gaps')
         self.assertTrue(response.data['analysis']['gaps'])
+        self.assertEqual(
+            [tool.name for tool in chat_deepseek.return_value.bind_tools.call_args.args[0]],
+            [
+                'propose_technology',
+                'propose_component',
+                'propose_damage_scenario',
+                'propose_attack_step',
+                'propose_threat_scenario',
+                'propose_control',
+                'analyze_current_state',
+            ],
+        )
+
+    @override_settings(
+        ASSISTANT_API='test-key',
+        ASSISTANT_API_URL='https://assistant.example/api',
+        ASSISTANT_MODEL='assistant-test-model',
+    )
+    @patch('api.langchains.ChatDeepSeek')
+    def test_prepare_create_followup_can_return_model_text_without_forced_intent(self, chat_deepseek):
+        chat_deepseek.return_value.bind_tools.return_value.invoke.return_value = FakeLangchainMessage(
+            'I analyzed the current model state.'
+        )
+
+        response = self.client.post(
+            '/api/langchains/prepare/',
+            {
+                'project_id': self.project.id,
+                'prompt': 'Can you implement these?',
+                'messages': [
+                    {
+                        'role': 'assistant',
+                        'content': 'I analyzed the current model state.',
+                    }
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data['message'],
+            'I analyzed the current model state.',
+        )
+        self.assertEqual(response.data['proposals'], [])
+        self.assertEqual(
+            [tool.name for tool in chat_deepseek.return_value.bind_tools.call_args.args[0]],
+            [
+                'propose_technology',
+                'propose_component',
+                'propose_damage_scenario',
+                'propose_attack_step',
+                'propose_threat_scenario',
+                'propose_control',
+                'analyze_current_state',
+            ],
+        )
 
     @override_settings(
         ASSISTANT_API='test-key',
