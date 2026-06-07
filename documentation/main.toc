@@ -1,0 +1,57 @@
+\babel@toc {slovak}{}\relax 
+\contentsline {section}{\numberline {1}Úvod}{3}{section.1}%
+\contentsline {section}{\numberline {2}TARA}{3}{section.2}%
+\contentsline {section}{\numberline {3}Databázy}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}MITRE ATT\&CK}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}MITRE CAPEC}{6}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}MITRE CWE}{6}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Návrh}{7}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Design}{7}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Definovanie systému}{8}{subsection.4.2}%
+\contentsline {subsubsection}{\numberline {4.2.1}Komponenty}{8}{subsubsection.4.2.1}%
+\contentsline {subsubsection}{\numberline {4.2.2}Datové entity}{8}{subsubsection.4.2.2}%
+\contentsline {subsubsection}{\numberline {4.2.3}Technológie}{8}{subsubsection.4.2.3}%
+\contentsline {subsection}{\numberline {4.3}Identifikácia rizík}{9}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Asistent scenárov poškodenia}{9}{subsubsection.4.3.1}%
+\contentsline {subsubsection}{\numberline {4.3.2}Asistent scenárov hrozieb}{9}{subsubsection.4.3.2}%
+\contentsline {subsubsection}{\numberline {4.3.3}Asistent krokov útoku}{9}{subsubsection.4.3.3}%
+\contentsline {subsubsection}{\numberline {4.3.4}Controls}{9}{subsubsection.4.3.4}%
+\contentsline {subsection}{\numberline {4.4}Analýza rizík a mitigácia rizík}{10}{subsection.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.1}Control skupiny}{10}{subsubsection.4.4.1}%
+\contentsline {subsubsection}{\numberline {4.4.2}Využitie LLM}{10}{subsubsection.4.4.2}%
+\contentsline {subsection}{\numberline {4.5}Backend}{11}{subsection.4.5}%
+\contentsline {section}{\numberline {5}Frontend}{15}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Návrh a prototyp aplikácie}{15}{subsection.5.1}%
+\contentsline {section}{\numberline {6}Backend \unhbox \voidb@x \kern \z@ \char `\- Iterácia 2}{16}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Autentizáia a autorizácia}{16}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Správa projektov}{17}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Prílad použitia backendu}{18}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Výsledná implementácia}{26}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Celkový tok práce v aplikácii}{26}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Autentizácia, projekty a prístupové práva}{27}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Dátový model výslednej aplikácie}{27}{subsection.7.3}%
+\contentsline {subsubsection}{\numberline {7.3.1}Technológie}{27}{subsubsection.7.3.1}%
+\contentsline {subsubsection}{\numberline {7.3.2}Komponenty}{28}{subsubsection.7.3.2}%
+\contentsline {subsubsection}{\numberline {7.3.3}Data entities}{28}{subsubsection.7.3.3}%
+\contentsline {subsubsection}{\numberline {7.3.4}Threat classes}{28}{subsubsection.7.3.4}%
+\contentsline {subsubsection}{\numberline {7.3.5}Attack steps}{28}{subsubsection.7.3.5}%
+\contentsline {subsubsection}{\numberline {7.3.6}Threat scenarios}{29}{subsubsection.7.3.6}%
+\contentsline {subsubsection}{\numberline {7.3.7}Damage scenarios a concerns}{29}{subsubsection.7.3.7}%
+\contentsline {subsubsection}{\numberline {7.3.8}Controls a control classes}{30}{subsubsection.7.3.8}%
+\contentsline {subsubsection}{\numberline {7.3.9}Control groups}{30}{subsubsection.7.3.9}%
+\contentsline {subsubsection}{\numberline {7.3.10}Risk treatment a cybersecurity goals}{30}{subsubsection.7.3.10}%
+\contentsline {subsection}{\numberline {7.4}Výpočet attack feasibility, impact a risk level}{30}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Backend API a synchronizácia vzťahov}{31}{subsection.7.5}%
+\contentsline {subsection}{\numberline {7.6}Grafický pohľad}{32}{subsection.7.6}%
+\contentsline {subsection}{\numberline {7.7}Strom projektu a vytváranie súvisiacich objektov}{33}{subsection.7.7}%
+\contentsline {subsection}{\numberline {7.8}Detailový panel a formuláre}{33}{subsection.7.8}%
+\contentsline {subsection}{\numberline {7.9}Tabuľkový pohľad}{34}{subsection.7.9}%
+\contentsline {subsection}{\numberline {7.10}Control skupiny a porovnávanie mitigácií}{35}{subsection.7.10}%
+\contentsline {subsection}{\numberline {7.11}Asset Identification assistant}{35}{subsection.7.11}%
+\contentsline {subsection}{\numberline {7.12}Konzola a LLM návrhy}{35}{subsection.7.12}%
+\contentsline {subsection}{\numberline {7.13}MITRE integrácia}{36}{subsection.7.13}%
+\contentsline {subsection}{\numberline {7.14}Generovanie PDF reportu}{37}{subsection.7.14}%
+\contentsline {subsection}{\numberline {7.15}Vzťah medzi grafom, tabuľkami, detailmi a backendom}{38}{subsection.7.15}%
+\contentsline {subsection}{\numberline {7.16}Príklad práce s aplikáciou}{38}{subsection.7.16}%
+\contentsline {subsection}{\numberline {7.17}Obmedzenia a možné rozšírenia}{39}{subsection.7.17}%
+\contentsline {subsection}{\numberline {7.18}Zhrnutie výsledku}{39}{subsection.7.18}%
